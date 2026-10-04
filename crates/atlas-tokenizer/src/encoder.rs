@@ -102,6 +102,14 @@ impl BpeTokenizer {
         &self.ranks
     }
 
+    /// Byte length of one token. Chunking needs this to split an oversized
+    /// pre-token at token boundaries without decoding: byte-level tokens
+    /// partition their input bytes exactly, so byte lengths are enough to
+    /// slice the original text.
+    pub fn token_byte_len(&self, rank: Rank) -> Option<usize> {
+        self.reverse.get(&rank).map(|token| token.len())
+    }
+
     pub fn vocab_size(&self) -> usize {
         self.ranks.len()
     }

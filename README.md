@@ -20,11 +20,19 @@ Main areas:
 
 ## Status
 
-Milestone 1 is complete: `crates/atlas-tokenizer` contains a byte-level BPE
-tokenizer with training, a priority-queue and a naive merge engine, GPT-style
+Milestones 1 and 2 are complete.
+
+Milestone 1: `crates/atlas-tokenizer` contains a byte-level BPE tokenizer with
+training, a priority-queue and a naive merge engine, GPT-style
 pre-tokenization, and benchmarks. It produces token IDs identical to
-tiktoken-rs `cl100k_base`, verified by diff tests. The other workspace crates
-are placeholders for future milestones.
+tiktoken-rs `cl100k_base`, verified by diff tests.
+
+Milestone 2: `crates/atlas-embedding` chunks documents by token count at
+pre-token boundaries, embeds chunks through an `Embedder` trait backed by
+fastembed (BAAI/bge-small-en-v1.5, 384 dimensions), and caches vectors to disk
+keyed by SHA-256(model + chunk text) so unchanged chunks are never re-embedded.
+
+The remaining workspace crates are placeholders for future milestones.
 
 ## Build and test
 

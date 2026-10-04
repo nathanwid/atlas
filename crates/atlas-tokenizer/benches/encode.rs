@@ -28,7 +28,7 @@ fn bench_encode(c: &mut Criterion) {
         b.iter(|| oracle.encode_ordinary(&corpus))
     });
     group.bench_function("hf_tokenizers", |b| {
-        b.iter(|| hf.encode(corpus.as_str(), false).unwrap())
+        b.iter(|| common::hf_encode_piecewise(&hf, &corpus))
     });
 
     group.finish();
