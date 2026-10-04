@@ -1,0 +1,54 @@
+[workspace]
+members = [
+    "apps/atlas-cli",
+    "crates/atlas-core",
+    "crates/atlas-tokenizer",
+    "crates/atlas-vocab",
+    "crates/atlas-embedding",
+    "crates/atlas-graph",
+    "crates/atlas-storage",
+]
+resolver = "3"
+
+[workspace.dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Storage
+surrealdb = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Math
+ndarray = "0.15"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Configuration
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# Testing / benchmarking (dev-only, added when M01 testing work starts)
+criterion = "0.5"
+
+# Milestone 1: BPE tokenizer
+fancy-regex = "0.19"
+tiktoken-rs = "0.12"
+# tokenizers uses the fancy-regex backend (not the default onig) so its
+# pre-tokenization engine is the exact same one tiktoken-rs uses; onig parses
+# possessive interval quantifiers like \p{N}{1,3}+ differently.
+tokenizers = { version = "0.23", default-features = false, features = [
+    "fancy-regex",
+    "progressbar",
+    "esaxx_fast",
+] }

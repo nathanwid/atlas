@@ -1,0 +1,6 @@
+[package]
+name = "atlas-vocab"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

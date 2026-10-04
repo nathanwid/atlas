@@ -1,0 +1,16 @@
+[package]
+name = "atlas-tokenizer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fancy-regex.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+tiktoken-rs.workspace = true
+tokenizers.workspace = true
+
+[[bench]]
+name = "encode"
+harness = false

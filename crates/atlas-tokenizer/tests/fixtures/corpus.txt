@@ -1,0 +1,157 @@
+Atlas is a small search engine that learns to read.
+
+The project began as a question about text. What does it mean for a machine
+to understand a document? The honest answer is that no machine understands a
+document the way a person does. A person reads the words and builds a picture
+in the mind. A machine sees numbers. The art of search is the art of choosing
+the right numbers so that documents about similar things get similar numbers.
+
+A tokenizer is the first door. Every text must pass through it. The tokenizer
+cuts a string into pieces called tokens, and every token has a number. That is
+all a model ever sees: numbers. If the tokenizer is careless, the model is
+built on sand. If the tokenizer is careful, the model has a fair chance.
+
+Byte pair encoding is the classic way to build a tokenizer. You start with the
+smallest pieces there are, the 256 possible bytes. Then you read a corpus and
+count which two pieces sit next to each other most often. You merge that pair
+into one new piece, and you repeat. After enough merges, common words like the,
+and, and said become single tokens, while rare words stay as several pieces.
+The result is a vocabulary that bends toward the language it was trained on.
+
+The training loop is simple to describe and easy to get wrong. First, split the
+corpus into words with a pattern. Second, count every pair of adjacent pieces
+across all the words, weighted by how often each word appears. Third, find the
+pair with the highest count and merge it everywhere it occurs. Fourth, add the
+merged piece to the vocabulary and give it the next free rank. Then go back to
+the second step and keep going until the vocabulary is large enough. The rank
+of a merged piece matters later, because encoding replays the merges in rank
+order. A low rank means the merge happened early, which means the pieces were
+common, which means the merge should win over later merges during encoding.
+
+Encoding is the twin of training. To encode a new string, split it the same
+way, then look at every adjacent pair of pieces and find the pair whose merge
+has the lowest rank. Merge that pair, look again, and keep going until no pair
+left in the string has a recorded merge. The lowest rank wins because the
+earliest merges in training were the most frequent ones. When you replay the
+merges in that order, a trained tokenizer and a fresh encoding agree with each
+other. This agreement is the whole trick. A tokenizer is nothing more than a
+table of ranks plus a rule about always taking the lowest rank first.
+
+Splitting the text into words before merging is called pre-tokenization. The
+pattern decides where merges may never cross. Without it, a merge might glue
+the end of one word to the start of the next, and the vocabulary would fill up
+with junk that never helps. Most patterns keep letters together, keep digits in
+small groups, keep punctuation apart, and treat runs of spaces with care. The
+care with spaces matters more than it sounds. A space before a word often
+carries meaning about where one word ends and the next begins, and models that
+read code care about every single space. Whitespace at the end of a line is
+different from whitespace in the middle of a sentence, and the pattern says so.
+
+Why bytes and not letters? Bytes are honest. A string is bytes in the end, and
+if the tokenizer works on bytes, then any input at all can be encoded and
+decoded without loss. There is no unknown character, no token for failure, no
+empty answer. Emoji, accents, scripts from every language, all of them are just
+bytes, and the vocabulary grows to cover the byte patterns that the corpus
+shows most often. Rare scripts cost more tokens than common ones, which is a
+real fairness problem, but it is a problem you can measure.
+
+A search engine built on tokens has a long road ahead of it. After the
+tokenizer comes the embedder, which turns a token sequence into a vector. The
+vector lives in a space where distance means something like meaning. Two
+chunks of text about the same topic land near each other. A question lands
+near its answers. Nobody writes down where things land. The model learns the
+space from data, and the space is the model.
+
+Vectors alone are not search. Search needs an index. The simplest index is no
+index at all: store every vector and compare a query against every single one.
+This brute force scan is slow in the large and honest in the small. It is the
+right first index because it gives exact answers. Every later index, however
+clever, must be measured against the brute force truth. Recall is the name of
+that measurement. If an index returns the top ten results and only eight of
+them match the true top ten, the recall at ten is zero point eight.
+
+Faster indexes trade exactness for speed. A graph index builds a lattice of
+neighbors and walks it greedily, hoping the walk finds the true nearest
+neighbors most of the time. Quantization packs each vector into fewer bytes
+and accepts some error in the comparison. Clustering splits the space into
+cells and only searches the promising ones. Every one of these tricks adds a
+knob, a failure mode, and a benchmark to run. The honest engineer measures
+recall and latency together and reports both, because either one alone is a
+half truth.
+
+Chunking sits between documents and vectors. A long document makes a weak
+single vector, because a vector that must stand for everything stands for
+nothing. So documents are cut into chunks, and each chunk is embedded on its
+own. Cut too fine and every chunk loses context. Cut too coarse and the
+vector blurs. The size of a chunk is measured in tokens, not characters,
+because the embedder counts tokens. This is why the tokenizer is the first
+door: even chunking leans on it.
+
+Evaluation closes the loop. You write queries, you mark which chunks are the
+known good answers, and you measure how often the system returns them at the
+top. The same queries must run against every embedder and every index and
+every retrieval mode, or the numbers are not comparable. A small evaluation
+set run honestly beats a large one run sloppily. When the hybrid retrieval
+arrives, graph walks over entity relations, vector scan over chunk
+embeddings, the same questions get asked again: what recall, at what cost,
+on which queries.
+
+The graph half of Atlas comes later. Entities are pulled from text, edges
+connect entities that mention, cite, or resemble each other, and a walk over
+that graph can pull in context that no embedding would rank highly. Vector
+search finds what sounds alike. Graph search finds what is connected. Neither
+one wins everywhere, and the plan is to measure rather than guess.
+
+Rust is a good language for all of this. The borrow checker makes the heap
+and the vector and the graph explicit, which is exactly the kind of detail a
+learning project wants on the table. Writing a priority queue merge by hand
+teaches more than any chapter, because the compiler refuses to let the bugs
+stay invisible. The plan is to write the naive merge first, then the heap
+driven merge, then measure them, and let the numbers end the argument.
+
+Small tools, measured steps, honest numbers. That is the whole method. A
+tokenizer that matches a reference. An index that beats the brute force scan
+without losing recall. A graph that pulls in neighbors the vectors missed.
+Every claim checked against a benchmark, every benchmark committed, every
+number reported even when it is ugly. That is how a learning project earns
+the right to be called a search engine.
+
+The quick brown fox jumps over the lazy dog while the calm cat watches the
+rain from the warm window. Pack my box with five dozen liquor jugs. How
+vexingly quick daft zebras jump. Sphinx of black quartz, judge my vow. The
+five boxing wizards jump quickly and the job requires extra pluck and skill.
+
+She sells sea shells by the sea shore, and the shells she sells are surely
+from the south sea. Peter Piper picked a peck of pickled peppers. A peck of
+pickled peppers Peter Piper picked. If Peter Piper picked a peck of pickled
+peppers, where is the peck of pickled peppers Peter Piper picked?
+
+To be, or not to be, that is the question. Whether it is nobler in the mind
+to suffer the slings and arrows of outrageous fortune, or to take arms
+against a sea of troubles, and by opposing end them. All the world is a
+stage, and all the men and women merely players. They have their exits and
+their entrances, and one man in his time plays many parts.
+
+It was the best of times, it was the worst of times, it was the age of
+wisdom, it was the age of foolishness, it was the epoch of belief, it was
+the epoch of incredulity, it was the season of light, it was the season of
+darkness, it was the spring of hope, it was the winter of despair.
+
+In the beginning the Universe was created. This has made a lot of people
+very angry and been widely regarded as a bad move. The ships hung in the
+sky in much the same way that bricks do not. Time is an illusion. Lunchtime
+doubly so. The answer to the great question of life, the universe and
+everything is forty two.
+
+The engine room hums while the index grows. One hundred thousand vectors
+float in a contiguous block of memory, each one normalized so that a dot
+product is a cosine. The query vector lands, the scan begins, and in a few
+milliseconds the top ten chunks float to the top with their scores. It is
+not clever. It is correct. Cleverness comes later, and only if it pays rent.
+
+Later the graph wakes up. Nodes for people, places, projects, and papers.
+Edges that say mentions, cites, and resembles. A personal page rank walk
+starts from the seed chunks and drifts along the edges, and the drift pulls
+in a project that never once used the words in the query but is exactly what
+the query was for. Hybrid retrieval is a vector scan and a graph walk
+shaking hands, and the evaluation harness keeps the score.
