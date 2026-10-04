@@ -141,7 +141,7 @@ Knowledge Graph   Vector Search
 | Category       | Technology            | Purpose                              | Status |
 | -------------- | --------------------- | ------------------------------------ | ------ |
 | Language       | Rust                  | Primary programming language         | ✅      |
-| CLI            | clap                  | Command-line interface               | 🔜 (M01) |
+| CLI            | clap                  | Command-line interface               | ✅ (M01) |
 | Async runtime  | tokio                 | Asynchronous runtime                 | 🔜      |
 | Storage        | SurrealDB             | Documents, graph, and vector storage | 🔜 (M07) |
 | Embeddings     | fastembed             | Pretrained embedding baseline (M04)  | ✅      |
@@ -149,10 +149,10 @@ Knowledge Graph   Vector Search
 | JSON           | serde_json            | JSON support                         | ✅      |
 | Math           | ndarray               | Vector and matrix operations         | 🔜      |
 | Error handling | anyhow                | Application errors                   | ✅      |
-| Error handling | thiserror             | Library errors                       | 🔜      |
-| Logging        | tracing               | Structured logging                   | 🔜 (M01) |
-| Logging        | tracing-subscriber    | Log formatting and filtering         | 🔜 (M01) |
-| Configuration  | figment *(or config)* | Configuration management             | 🔜 (M01) |
+| Error handling | thiserror             | Library errors                       | ✅ (M01) |
+| Logging        | tracing               | Structured logging                   | ✅ (M01) |
+| Logging        | tracing-subscriber    | Log formatting and filtering         | ✅ (M01) |
+| Configuration  | figment *(or config)* | Configuration management             | ✅ (M01) |
 | Testing        | cargo test            | Unit and integration testing         | ✅      |
 | Benchmarking   | criterion             | Performance benchmarks               | ✅      |
 | Formatting     | rustfmt               | Code formatting                      | ✅      |
