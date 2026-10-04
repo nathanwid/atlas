@@ -24,3 +24,6 @@ rustc-ice-*.txt
 .env
 .env.*
 !.env.example
+
+# fastembed model weights (downloaded by atlas-embedding tests)
+.fastembed_cache/

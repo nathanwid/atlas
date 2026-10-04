@@ -116,16 +116,15 @@ pub fn derive_merges(ranks: &Ranks) -> Vec<(String, String)> {
 /// Build a HuggingFace `tokenizers` tokenizer equivalent to cl100k_base,
 /// derived from the same committed ranks file the Atlas tokenizer uses.
 ///
-/// Pre-tokenization is a Split with the cl100k pattern (Isolated = matches
-/// become their own pieces, i.e. find-all semantics) followed by ByteLevel
-/// with `use_regex(false)`, which only performs the byte-to-unicode mapping
-/// without applying GPT-2's own splitting pattern.
+/// Pre-tokenization is NOT done by the HF tokenizer. fastembed (used by
+/// atlas-embedding) depends on `tokenizers` with the `onig` feature, and
+/// cargo feature unification means the onig backend wins in any build graph
+/// containing fastembed — onig mis-parses `\p{N}{1,3}+`. Instead, Atlas's own
+/// fancy-regex pre-tokenizer supplies the pieces (see [`hf_encode_piecewise`])
+/// and HF only applies a regex-free ByteLevel mapping plus BPE.
 pub fn build_hf_cl100k(ranks: &Ranks) -> tokenizers::Tokenizer {
     use tokenizers::models::bpe::{BPE, Vocab};
     use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-    use tokenizers::pre_tokenizers::sequence::Sequence;
-    use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
-    use tokenizers::tokenizer::SplitDelimiterBehavior;
 
     let table = byte_to_unicode();
     let vocab: Vocab = ranks
@@ -138,16 +137,28 @@ pub fn build_hf_cl100k(ranks: &Ranks) -> tokenizers::Tokenizer {
     let merges = derive_merges(ranks);
     let bpe = BPE::new(vocab, merges);
 
-    let split = Split::new(
-        SplitPattern::Regex(atlas_tokenizer::pretokenize::CL100K_PATTERN.to_string()),
-        SplitDelimiterBehavior::Isolated,
-        false,
-    )
-    .expect("cl100k pattern must compile under onig");
+    // use_regex(false): ByteLevel only maps bytes to the unicode alphabet,
+    // it never applies GPT-2's own splitting pattern.
     let byte_level = ByteLevel::new(false, false, false);
-    let sequence = Sequence::new(vec![split.into(), byte_level.into()]);
 
     let mut tokenizer = tokenizers::Tokenizer::new(bpe);
-    tokenizer.with_pre_tokenizer(Some(sequence));
+    tokenizer.with_pre_tokenizer(Some(byte_level));
     tokenizer
+}
+
+/// Encode `text` with the HF tokenizer, pre-splitting with Atlas's
+/// pre-tokenizer so HF's regex engine is never involved. BPE never merges
+/// across pre-token boundaries, so this is exactly equivalent to letting HF
+/// split with the same pattern.
+pub fn hf_encode_piecewise(tokenizer: &tokenizers::Tokenizer, text: &str) -> Vec<u32> {
+    atlas_tokenizer::pretokenize::pretokenize(text)
+        .iter()
+        .flat_map(|piece| {
+            tokenizer
+                .encode(*piece, false)
+                .expect("hf encode of a pre-tokenized piece")
+                .get_ids()
+                .to_vec()
+        })
+        .collect()
 }

@@ -59,17 +59,15 @@ fn encode_decode_roundtrips_exactly() {
 /// Validates the benchmark setup: the HF tokenizer we derive from the ranks
 /// file (vocab via byte-to-unicode, merges reconstructed from rank order)
 /// must also match the oracle, otherwise a benchmark comparison against it
-/// would compare different tokenizations.
+/// would compare different tokenizations. Pre-tokenization is done by Atlas
+/// (piecewise) because fastembed forces the onig regex backend onto the HF
+/// crate via feature unification; see common::build_hf_cl100k.
 #[test]
 fn hf_tokenizer_derived_from_ranks_matches_oracle() {
     let oracle = cl100k_base().expect("oracle loads");
     let hf = build_hf_cl100k(&load_ranks());
     for text in sample_texts() {
-        let hf_ids = hf
-            .encode(text, false)
-            .expect("hf encode")
-            .get_ids()
-            .to_vec();
+        let hf_ids = common::hf_encode_piecewise(&hf, text);
         assert_eq!(
             hf_ids,
             oracle.encode_ordinary(text),
