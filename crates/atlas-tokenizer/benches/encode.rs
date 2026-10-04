@@ -1,5 +1,5 @@
-//! M1 benchmark: encode throughput of the two Atlas merge engines versus the
-//! tiktoken-rs oracle and the HuggingFace `tokenizers` crate.
+//! Encode-throughput benchmark of the two Atlas merge engines versus the
+//! tiktoken-rs oracle and the HuggingFace `tokenizers` crate (M02).
 //!
 //! All four encode the identical input (the committed corpus fixture, ~10 KB
 //! of plain English) end to end, including pre-tokenization, so the numbers
