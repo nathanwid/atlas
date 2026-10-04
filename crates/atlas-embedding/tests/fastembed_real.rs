@@ -1,4 +1,5 @@
-//! Real-model integration test for Milestone 2.
+//! Real-model integration test for the chunk + embed pipeline (M04
+//! groundwork).
 //!
 //! Ignored by default: the first run downloads ~100 MB of ONNX weights into
 //! fastembed's cache directory and needs network access. Run explicitly with

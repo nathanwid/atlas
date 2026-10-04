@@ -41,7 +41,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 # Testing / benchmarking (dev-only, added when M01 testing work starts)
 criterion = "0.5"
 
-# Milestone 1: BPE tokenizer
+# M02: tokenizer
 fancy-regex = "0.19"
 tiktoken-rs = "0.12"
 # tokenizers uses the fancy-regex backend (not the default onig) so its

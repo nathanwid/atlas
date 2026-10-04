@@ -1,6 +1,6 @@
-//! Document chunking and embedding for Atlas.
+//! Document chunking and embedding for Atlas (M04 groundwork).
 //!
-//! Milestone 2 pipeline: a document goes through
+//! The pipeline: a document goes through
 //!
 //! ```text
 //! document -> Chunker (token-bounded, pre-token-aligned chunks)

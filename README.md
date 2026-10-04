@@ -1,38 +1,27 @@
 # Atlas
 
-Atlas is a Rust learning project that builds a semantic search and knowledge
-graph engine piece by piece.
+Atlas is a Rust learning project: a semantic engine that incrementally learns
+from text, builds embeddings and a knowledge graph, and answers questions
+using its own knowledge — no LLM required.
 
-The goal is to understand how the pieces work by implementing the important
-mechanisms by hand — tokenization, embeddings, vector indexes, and graph
-retrieval — and by measuring Atlas's own implementations against established
-libraries instead of assuming they are slower.
-
-Main areas:
-
-- **Tokenization** — a hand-rolled byte-level BPE tokenizer (training,
-  encoding, merging)
-- **Embeddings** — document chunk embedding with pluggable embedder backends
-- **Vector search** — brute-force and approximate nearest-neighbor indexes,
-  with recall@k and latency evaluation
-- **Knowledge graphs** — entity extraction, graph expansion, personalized
-  PageRank, and hybrid retrieval
+The point is to understand how these systems work by implementing the
+mechanisms by hand (tokenization, embeddings, graph retrieval) and measuring
+against established baselines where honest numbers matter.
 
 ## Status
 
-Milestones 1 and 2 are complete.
+- **M01 Foundation** — partial: workspace + testing done; CLI, logging, and
+  configuration remain.
+- **M02 Tokenizer** — complete: hand-rolled byte-level BPE, cl100k-verified,
+  trained + benchmarked.
+- **M03 Vocabulary** — next.
+- **M04 Embedding Engine** — groundwork done: chunking, FastEmbed baseline,
+  vector cache, and brute-force similarity with recall@k (pending merge from
+  the `atlas/vector-search` branch).
 
-Milestone 1: `crates/atlas-tokenizer` contains a byte-level BPE tokenizer with
-training, a priority-queue and a naive merge engine, GPT-style
-pre-tokenization, and benchmarks. It produces token IDs identical to
-tiktoken-rs `cl100k_base`, verified by diff tests.
-
-Milestone 2: `crates/atlas-embedding` chunks documents by token count at
-pre-token boundaries, embeds chunks through an `Embedder` trait backed by
-fastembed (BAAI/bge-small-en-v1.5, 384 dimensions), and caches vectors to disk
-keyed by SHA-256(model + chunk text) so unchanged chunks are never re-embedded.
-
-The remaining workspace crates are placeholders for future milestones.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
+[docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable
+project decisions.
 
 ## Build and test
 

@@ -2,32 +2,41 @@
 
 ## What this repo is
 
-Atlas is a Rust learning project for understanding how semantic search and
-knowledge graph systems work. It builds a search engine milestone by
-milestone, implementing mechanisms by hand and measuring them against
-established libraries. `README.md` reflects the current milestone state.
+Atlas is a Rust-native semantic **learning engine**: it incrementally learns
+from text, builds embeddings and a knowledge graph, and answers questions from
+its own knowledge — no LLM required. It is a learning project: mechanisms are
+implemented by hand and measured against established baselines. It is a
+knowledge engine, not a vector database.
+
+Authoritative docs:
+
+- `docs/PROJECT.md` — vision, goals/non-goals, architecture, tech stack, and
+  stable project-level decisions.
+- `docs/ROADMAP.md` — milestone scope, sequencing, and current status.
+- `README.md` — user-facing status snapshot.
 
 Layout: `apps/atlas-cli` + `crates/atlas-{core,vocab,tokenizer,embedding,graph,storage}`.
 Most crates are deliberate empty placeholders for future milestones — do not
 delete them or fill them ahead of their milestone. `atlas-vocab` is unused on
-purpose until a concrete term-vocabulary need exists.
+purpose until M03 (Vocabulary).
 
-## Milestone roadmap (high-level)
+## Milestones
 
-1. BPE tokenizer
-2. Document chunking and embeddings
-3. Brute-force vector search and evaluation
-4. Vector search optimization
-5. HNSW
-6. Entity graph and PageRank
-7. Hybrid vector + graph retrieval
-8. Service layer and alternative vector-storage backends
+The milestone list is M01–M09 (Foundation, Tokenizer, Vocabulary, Embedding
+Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
+Answering). Scope, deliverables, and status per milestone live in
+`docs/ROADMAP.md` — do not rely on this file for sequencing details.
+
+Current status: M01 partial, M02 complete, **M03 Vocabulary is next**, M04
+groundwork pending merge on `atlas/vector-search`.
 
 ## Workflow rules
 
 - Inspect and reuse the existing project structure before making changes.
-- Work on one milestone at a time. Do not implement future milestones unless
-  explicitly requested.
+  Do not unnecessarily rewrite working code.
+- Work on one milestone at a time. Do not implement future milestones early;
+  M03 (Vocabulary) is the next one — do not start it without an approved
+  plan, and never start later milestones unprompted.
 - Before implementing a milestone or significant feature: inspect the project,
   present a brief plan with acceptance criteria, and wait for explicit
   approval. Small fixes, formatting, and straightforward corrections do not
@@ -35,7 +44,9 @@ purpose until a concrete term-vocabulary need exists.
 - Keep code idiomatic, simple, readable, and easy to understand; prefer clear
   implementations over clever abstractions. Explain important non-obvious
   implementation decisions.
-- Do not add dependencies without asking first and explaining why.
+- Do not add dependencies or expand scope without asking first and explaining
+  why. Stable architectural decisions are listed in `docs/PROJECT.md`; they
+  change only with explicit approval.
 - Add tests for new behavior where practical.
 - Run the appropriate tests, Clippy, formatting checks, and benchmarks when
   applicable. Keep benchmark results honest — never invent measurements, and
