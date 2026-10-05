@@ -46,7 +46,7 @@ pub fn embed_chunks(
 
     if !misses.is_empty() {
         let missing: Vec<&str> = misses.iter().map(|&i| texts[i]).collect();
-        let vectors = embedder.embed(&missing)?;
+        let vectors = embedder.embed_documents(&missing)?;
         anyhow::ensure!(
             vectors.len() == misses.len(),
             "embedder returned {} vectors for {} texts",
@@ -66,6 +66,16 @@ pub fn embed_chunks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Default `embed_query` must route through `embed_documents`: backends
+    /// without query handling get plain single-text embedding.
+    #[test]
+    fn embed_query_defaults_to_single_document_embedding() {
+        let embedder = CountingEmbedder::new();
+        let query = embedder.embed_query("alpha").unwrap();
+        assert_eq!(query, vec![5.0, 1.0]);
+        assert_eq!(embedder.call_count(), 1);
+    }
 
     /// Fake embedder that never touches a model: the vector is derived from
     /// the text, and every call is counted so tests can assert exactly how
@@ -91,7 +101,7 @@ mod tests {
             "counting-fake"
         }
 
-        fn embed(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        fn embed_documents(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(texts
                 .iter()

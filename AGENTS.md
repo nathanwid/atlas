@@ -28,8 +28,8 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01–M03 complete, **M04 Embedding Engine is next** (its
-groundwork is pending merge on `atlas/vector-search`), M05 onward pending.
+Current status: M01–M04 complete, **M05 Learning Engine is next** (Skip-Gram
+over M03 vocabulary IDs; FastEmbed stays as the comparison baseline).
 
 ## Workflow rules
 

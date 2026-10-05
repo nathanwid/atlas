@@ -11,8 +11,8 @@ current status.
 | M01       | Foundation         | Workspace, CLI, logging, configuration, testing         | ✅ complete |
 | M02       | Tokenizer          | Tokenization and text normalization                     | ✅ complete |
 | M03       | Vocabulary         | Token ID management and persistence                     | ✅ complete |
-| M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ◐ groundwork done |
-| M05       | Learning Engine    | Skip-Gram training and incremental learning             | ⏳ pending |
+| M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ✅ complete |
+| M05       | Learning Engine    | Skip-Gram training and incremental learning             | ⏭ next |
 | M06       | Knowledge Graph    | Entity extraction and relationship graph                | ⏳ pending |
 | M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ⏳ pending |
 | M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ⏳ pending |
@@ -83,35 +83,42 @@ would come with it).
 
 ---
 
-## M04 — Embedding Engine · ◐ groundwork done
+## M04 — Embedding Engine · ✅ complete
 
 **Goal.** Chunking, embeddings, and similarity search over learned text.
 
-**Groundwork already in place** (built ahead under the earlier milestone
-numbering; to be merged from the `atlas/vector-search` branch):
-- `atlas-embedding`: token-bounded document chunking at pre-token boundaries
-  (with overlap + oversized-piece hard splits); `Embedder` trait with a
-  FastEmbed backend (`BAAI/bge-small-en-v1.5`, 384-dim); content-addressed
-  vector cache (SHA-256(model + text) → bincode).
-- `atlas-storage` (on that branch): `VectorIndex` trait +
-  `BruteForceIndex` — contiguous row-major storage, L2-normalized vectors,
-  cosine-as-dot-product exact top-k — plus a committed query set with
-  known-good chunks and recall@k evaluation (real-model eval is report-only).
+**Delivered.** The groundwork (token-bounded chunking; `Embedder` trait with
+a FastEmbed backend for `BAAI/bge-small-en-v1.5`, 384-dim; content-addressed
+vector cache; `VectorIndex` trait + `BruteForceIndex` exact cosine top-k;
+query set with known-good chunks and recall@k evaluation) was merged from
+`atlas/vector-search` and completed with:
 
-**Remaining for M04.** Merge/land the groundwork branch; wire chunk → embed →
-index → search end to end behind the CLI/learning flow; keep FastEmbed as the
-pretrained baseline for M05 comparisons.
+- **Query/document separation.** `Embedder::embed_documents` (batched, raw)
+  vs `Embedder::embed_query` (single). BGE's query instruction prefix is
+  isolated inside `FastembedEmbedder`; backends without query handling use
+  the default pass-through. `embed_chunks` embeds documents only.
+- End-to-end offline evaluation (deterministic fake embedder, ground truth
+  by construction) and a report-only real-model evaluation (recall@1/3/5 +
+  scan latency, no thresholds).
 
-**Dependencies.** M02 (token counting), M03 (persistent vocabulary, if chunk
-records need stable IDs), fastembed (approved).
+**Boundary notes.** Embeddings operate on document chunks; token-level
+embeddings are M05's subject, so `atlas-vocab` is intentionally not consumed
+yet. CLI `learn`/`search` stay wired-but-placeholder: making them real needs
+chunk-text persistence, which belongs to M07 (SurrealDB). FastEmbed remains
+the pretrained baseline; M05 adds Atlas's own learned embeddings alongside.
+
+**Dependencies.** M02 (done), fastembed (approved).
 
 ---
 
-## M05 — Learning Engine · ⏳ pending
+## M05 — Learning Engine · ⏭ next
 
 **Goal.** Atlas's own embeddings: Skip-Gram training and incremental
 learning. Atlas learns from text it is given and improves its embeddings over
 time; the FastEmbed path remains as the comparison baseline.
+
+**Inputs ready.** M03 vocabulary IDs (dense, persistent) and the M04 chunk
+pipeline (corpus → token-bounded chunks) are the training substrate.
 
 **Dependencies.** M03 (vocabulary), M04 (chunk pipeline as training input).
 
@@ -164,12 +171,12 @@ original roadmap above is the source of truth going forward.
 | Existing work | Home in the original roadmap |
 | --- | --- |
 | Byte-level BPE tokenizer (`atlas-tokenizer`) | M02 (complete) |
-| Token-bounded chunking (`atlas-embedding`) | M04 groundwork |
+| Token-bounded chunking (`atlas-embedding`) | M04 (complete) |
 | FastEmbed embedder + `Embedder` trait | M04 — pretrained **baseline**; M05 adds Atlas's own learned embeddings |
-| Vector cache (SHA-256 keyed, bincode) | M04/M07 — retained where useful; durability revisited in M07 |
-| `BruteForceIndex` + `VectorIndex` + recall@k eval (branch `atlas/vector-search`) | M04 similarity-search groundwork, pending merge |
-| `atlas-vocab` (empty) | M03 — deliberately unused until then |
-| `atlas-cli` command placeholders (`learn/similar/graph/search/ask`) | M01 CLI wiring; commands activate milestone by milestone |
+| Vector cache (SHA-256 keyed, bincode) | M04 (complete); durability revisited in M07 |
+| `BruteForceIndex` + `VectorIndex` + recall@k eval | M04 (complete, merged from `atlas/vector-search`) |
+| `atlas-vocab` | M03 (complete) — consumed by M05, not M04 |
+| `atlas-cli` command placeholders (`learn/similar/graph/search/ask`) | M01 wired the commands; behavior arrives per milestone — `learn`/`search` need M07 persistence first |
 
 ---
 

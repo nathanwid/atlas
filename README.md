@@ -16,9 +16,9 @@ against established baselines where honest numbers matter.
   trained + benchmarked.
 - **M03 Vocabulary** — complete: byte-keyed dense token IDs, deterministic
   build, versioned binary persistence.
-- **M04 Embedding Engine** — next; groundwork done: chunking, FastEmbed
-  baseline, vector cache, and brute-force similarity with recall@k (pending
-  merge from the `atlas/vector-search` branch).
+- **M04 Embedding Engine** — complete: chunking, FastEmbed baseline, vector
+  cache, brute-force similarity with recall@k evaluation.
+- **M05 Learning Engine** — next.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable
