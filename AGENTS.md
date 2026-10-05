@@ -28,8 +28,9 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01–M05 complete, **M06 Knowledge Graph is next** (entity
-extraction and relationship graph); M07–M09 pending.
+Current status: M01–M06 complete, **M07 Storage is next** (SurrealDB
+persistence for documents, embeddings, and the graph, plus the CLI
+learn/search workflows); M08–M09 pending.
 
 ## Workflow rules
 

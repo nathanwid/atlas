@@ -21,7 +21,9 @@ against established baselines where honest numbers matter.
 - **M05 Learning Engine** — complete: hand-rolled deterministic Skip-Gram
   with negative sampling, incremental learning, and mean-pooling text
   embeddings; FastEmbed stays as the baseline.
-- **M06 Knowledge Graph** — next.
+- **M06 Knowledge Graph** — complete: deterministic entity/relationship
+  extraction, directed graph with evidence, BFS traversal; std-only.
+- **M07 Storage** — next.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable
