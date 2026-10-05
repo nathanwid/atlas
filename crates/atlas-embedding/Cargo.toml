@@ -6,9 +6,12 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 atlas-tokenizer = { path = "../atlas-tokenizer" }
+atlas-vocab = { path = "../atlas-vocab" }
 bincode = "1.3"
 fastembed = "7.1.0"
+serde.workspace = true
 sha2 = "0.11"
+thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = "3.27"

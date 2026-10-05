@@ -176,10 +176,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atlas-tokenizer",
+ "atlas-vocab",
  "bincode",
  "fastembed",
+ "serde",
  "sha2",
  "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

@@ -12,8 +12,8 @@ current status.
 | M02       | Tokenizer          | Tokenization and text normalization                     | ✅ complete |
 | M03       | Vocabulary         | Token ID management and persistence                     | ✅ complete |
 | M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ✅ complete |
-| M05       | Learning Engine    | Skip-Gram training and incremental learning             | ⏭ next |
-| M06       | Knowledge Graph    | Entity extraction and relationship graph                | ⏳ pending |
+| M05       | Learning Engine    | Skip-Gram training and incremental learning             | ✅ complete |
+| M06       | Knowledge Graph    | Entity extraction and relationship graph                | ⏭ next |
 | M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ⏳ pending |
 | M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ⏳ pending |
 | M09       | Question Answering | Answer questions from Atlas knowledge                   | ⏳ pending |
@@ -111,20 +111,41 @@ the pretrained baseline; M05 adds Atlas's own learned embeddings alongside.
 
 ---
 
-## M05 — Learning Engine · ⏭ next
+## M05 — Learning Engine · ✅ complete
 
 **Goal.** Atlas's own embeddings: Skip-Gram training and incremental
 learning. Atlas learns from text it is given and improves its embeddings over
 time; the FastEmbed path remains as the comparison baseline.
 
-**Inputs ready.** M03 vocabulary IDs (dense, persistent) and the M04 chunk
-pipeline (corpus → token-bounded chunks) are the training substrate.
+**Delivered.** `atlas-embedding::learn` — a hand-rolled Skip-Gram model with
+negative sampling (no autodiff, no tensor library, single-threaded,
+deterministic):
 
-**Dependencies.** M03 (vocabulary), M04 (chunk pipeline as training input).
+- **Training.** `train(&mut Vocab, &BpeTokenizer, corpus, &TrainerConfig)`:
+  corpus → tokenizer → M03 vocabulary IDs (growing it via `get_or_insert` —
+  one token-ID system), sliding-window pairs, unigram^0.75 negative sampling
+  from a seeded xorshift PRNG (no `rand`), linear lr decay, SGD on
+  center/context matrices.
+- **Incremental learning.** `SkipGramModel::learn`: new text grows the
+  vocabulary and appends initialized rows, then trains on the new text at
+  the decay floor. Documented limitation: no replay buffer, so old vectors
+  can drift.
+- **Inference.** Token-level API (`token_vector`/`similarity`/`nearest`) plus
+  `LearnedEmbedder`, which implements the `Embedder` trait via mean pooling
+  of known-token vectors (unknown tokens skipped; all-unknown text → zero
+  vector).
+- **Persistence.** Versioned bincode; loading validates the model was
+  trained against the provided vocabulary (row-count check).
+- **Evaluation.** Deterministic bit-identical reruns (unit-tested); corpus
+  training on 9.9 KB / vocab 798 / dim 64 finishes in ~0.5 s (release) and
+  shows honest co-occurrence neighbors (e.g. `search` → `connected`,
+  `Graph`, `alike`). Report-only; no quality thresholds.
+
+**Dependencies.** M03 (vocabulary IDs), M04 (crate + baseline).
 
 ---
 
-## M06 — Knowledge Graph · ⏳ pending
+## M06 — Knowledge Graph · ⏭ next
 
 **Goal.** Entity extraction and an explicit relationship graph
 (`Rust ──uses──▶ Tokio`), plus graph-backed retrieval helpers.
