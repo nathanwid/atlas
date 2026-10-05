@@ -14,10 +14,11 @@ against established baselines where honest numbers matter.
   tracing logging, figment configuration.
 - **M02 Tokenizer** — complete: hand-rolled byte-level BPE, cl100k-verified,
   trained + benchmarked.
-- **M03 Vocabulary** — next.
-- **M04 Embedding Engine** — groundwork done: chunking, FastEmbed baseline,
-  vector cache, and brute-force similarity with recall@k (pending merge from
-  the `atlas/vector-search` branch).
+- **M03 Vocabulary** — complete: byte-keyed dense token IDs, deterministic
+  build, versioned binary persistence.
+- **M04 Embedding Engine** — next; groundwork done: chunking, FastEmbed
+  baseline, vector cache, and brute-force similarity with recall@k (pending
+  merge from the `atlas/vector-search` branch).
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable

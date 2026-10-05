@@ -10,7 +10,7 @@ current status.
 | --------- | ------------------ | ------------------------------------------------------- | ------ |
 | M01       | Foundation         | Workspace, CLI, logging, configuration, testing         | ✅ complete |
 | M02       | Tokenizer          | Tokenization and text normalization                     | ✅ complete |
-| M03       | Vocabulary         | Token ID management and persistence                     | ⏭ next |
+| M03       | Vocabulary         | Token ID management and persistence                     | ✅ complete |
 | M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ◐ groundwork done |
 | M05       | Learning Engine    | Skip-Gram training and incremental learning             | ⏳ pending |
 | M06       | Knowledge Graph    | Entity extraction and relationship graph                | ⏳ pending |
@@ -59,20 +59,27 @@ engines against tiktoken-rs and the HF `tokenizers` crate.
 
 ---
 
-## M03 — Vocabulary · ⏭ next
+## M03 — Vocabulary · ✅ complete
 
 **Goal.** Token ID management and persistence.
 
-**Planned scope.** `atlas-vocab` becomes real: a persistent token → ID
-mapping built over the tokenizer's output, with load/save so learned
-vocabulary survives runs.
+**Delivered.** `atlas-vocab`: a `Vocab` keyed by raw token bytes with dense
+`u32` IDs assigned by first occurrence, both-direction lookup, explicit
+`Option`-based unknown handling (no reserved UNK), deterministic corpus
+construction (`build`), incremental growth (`get_or_insert` — the M05 hook),
+and versioned bincode persistence that treats corrupt files as errors, never
+silently empty vocabularies. `atlas-tokenizer` gained one small reverse
+lookup, `BpeTokenizer::token_bytes(rank)`; merge ranks stay in the tokenizer.
 
-**Dependencies.** M02 (tokens come from `atlas-tokenizer`).
+**Key decision (the deferred M03 question, now resolved).** Vocabulary keys
+are raw token bytes: byte-level tokens can be invalid UTF-8, so bytes are the
+only representation that preserves tokenizer semantics and exact
+round-tripping. Rank-keyed vocabularies would be opaque without the merge
+file; a normalized-word/term vocabulary is a different construct and remains
+deferred until a milestone needs it (with the normalization decision that
+would come with it).
 
-**Open design decision (deferred to M03 planning).** Vocabulary key format:
-BPE token strings, byte sequences, or normalized words. Normalization itself,
-if adopted at this layer, is a consumer-side choice — the tokenizer stays
-untouched.
+**Dependencies.** M02 (done).
 
 ---
 

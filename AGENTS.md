@@ -17,8 +17,9 @@ Authoritative docs:
 
 Layout: `apps/atlas-cli` + `crates/atlas-{core,vocab,tokenizer,embedding,graph,storage}`.
 Most crates are deliberate empty placeholders for future milestones — do not
-delete them or fill them ahead of their milestone. `atlas-vocab` is unused on
-purpose until M03 (Vocabulary).
+delete them or fill them ahead of their milestone. `atlas-vocab` owns token
+ID management and persistence (M03); BPE mechanics stay in
+`atlas-tokenizer`.
 
 ## Milestones
 
@@ -27,8 +28,8 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01 complete, M02 complete, **M03 Vocabulary is next**, M04
-groundwork pending merge on `atlas/vector-search`.
+Current status: M01–M03 complete, **M04 Embedding Engine is next** (its
+groundwork is pending merge on `atlas/vector-search`), M05 onward pending.
 
 ## Workflow rules
 

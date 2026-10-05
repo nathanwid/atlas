@@ -203,6 +203,13 @@ dependencies = [
 [[package]]
 name = "atlas-vocab"
 version = "0.1.0"
+dependencies = [
+ "atlas-tokenizer",
+ "bincode",
+ "serde",
+ "tempfile",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "atomic"
