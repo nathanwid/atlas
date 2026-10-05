@@ -8,8 +8,8 @@
 //!
 //! This is the honest baseline: exact top-k, O(n·d) per query. Top-k uses a
 //! full sort of the hits; at Atlas's current scale (hundreds of chunks) the
-//! sort is noise next to the scan, and clarity beats a selection heap. That
-//! changes when the scan itself gets fast in M4.
+//! sort is noise next to the scan, and clarity beats a selection heap. If
+//! scan speed ever matters, it becomes part of whichever milestone needs it.
 
 /// L2-normalize in place. A zero vector is left as-is rather than turned
 /// into NaNs; scores against it will be 0.

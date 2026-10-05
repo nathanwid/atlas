@@ -1,4 +1,4 @@
-//! Real-model evaluation, Milestone 3.
+//! Real-model evaluation for the M04 similarity-search layer.
 //!
 //! Ignored by default (model weights + network). Run explicitly:
 //! `cargo test -p atlas-storage --release -- --ignored --nocapture`
@@ -35,7 +35,9 @@ fn real_model_eval_report_only() {
     let mut latencies = Vec::new();
     for q in &eval.queries {
         let expected = resolve_expected(&chunk_refs, q);
-        let query_vec = &embedder.embed(&[q.query.as_str()]).expect("query embeds")[0];
+        // Queries go through embed_query (BGE prefixes them); documents
+        // were embedded raw via embed_chunks.
+        let query_vec = &embedder.embed_query(&q.query).expect("query embeds");
 
         let start = Instant::now();
         let hits = index.search(query_vec, 5);

@@ -25,7 +25,7 @@ impl Embedder for MarkingEmbedder {
         "marking-fake"
     }
 
-    fn embed(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+    fn embed_documents(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         let dim = self.queries.len();
         Ok(texts
             .iter()
@@ -118,7 +118,7 @@ fn eval_harness_runs_over_corpus_chunks_offline() {
 /// embedder gives to the query text itself.
 fn vectors_that_encode_query(embedder: &MarkingEmbedder, j: usize) -> Vec<f32> {
     embedder
-        .embed(&[&embedder.queries[j].query])
+        .embed_documents(&[&embedder.queries[j].query])
         .unwrap()
         .remove(0)
 }

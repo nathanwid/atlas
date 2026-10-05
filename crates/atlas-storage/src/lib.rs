@@ -1,10 +1,10 @@
-//! Vector indexes for Atlas.
+//! Vector indexes for Atlas (M04 similarity-search layer).
 //!
-//! Milestone 3 introduces the [`index::VectorIndex`] boundary and its first
-//! implementation: [`index::BruteForceIndex`], an exact exhaustive scan over
-//! contiguous storage. It is deliberately the simplest possible index: slow
-//! in the large, exact everywhere, and the baseline of truth that every
-//! later index (SIMD scan, HNSW, pgvector) must be measured against.
+//! [`index::VectorIndex`] is the boundary; [`index::BruteForceIndex`] is its
+//! first implementation: an exact exhaustive scan over contiguous storage.
+//! It is deliberately the simplest possible index: slow in the large, exact
+//! everywhere, and the baseline of truth that any future index work must be
+//! measured against. Durable storage backends belong to M07.
 
 pub mod brute;
 pub mod index;
