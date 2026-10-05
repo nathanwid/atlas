@@ -13,8 +13,8 @@ current status.
 | M03       | Vocabulary         | Token ID management and persistence                     | ✅ complete |
 | M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ✅ complete |
 | M05       | Learning Engine    | Skip-Gram training and incremental learning             | ✅ complete |
-| M06       | Knowledge Graph    | Entity extraction and relationship graph                | ⏭ next |
-| M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ⏳ pending |
+| M06       | Knowledge Graph    | Entity extraction and relationship graph                | ✅ complete |
+| M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ⏭ next |
 | M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ⏳ pending |
 | M09       | Question Answering | Answer questions from Atlas knowledge                   | ⏳ pending |
 
@@ -145,21 +145,50 @@ deterministic):
 
 ---
 
-## M06 — Knowledge Graph · ⏭ next
+## M06 — Knowledge Graph · ✅ complete
 
 **Goal.** Entity extraction and an explicit relationship graph
-(`Rust ──uses──▶ Tokio`), plus graph-backed retrieval helpers.
+(`Rust ──uses──▶ Tokio`), plus deterministic graph traversal.
 
-**Dependencies.** M03 (entity identity via vocabulary), M04/M05 (semantics
-for entity linking).
+**Delivered.** `atlas-graph` — self-contained, std-only, no other Atlas
+crate dependencies:
+
+- **Model.** Dense first-seen `EntityId`s keyed by normalized lowercase
+  surface terms (first-seen display labels kept; optional `kind` label,
+  unset by extraction). Directed relationships interned per
+  `(src, predicate, dst)` triple with an `EdgeOrigin` of `Explicit`
+  (pattern-derived) or `CoOccurrence` (lower-confidence fallback); explicit
+  evidence upgrades a pair's fallback edges, never downgrades. Evidence =
+  `(doc_id, sentence)`, merged on duplicates.
+- **Extraction.** Deterministic, no LLM/NLP: sentence split, capitalized
+  word runs + configurable lexicon for entity recognition (sentence-initial
+  runs excluded unless lexicon hits), consecutive-candidate predicate
+  phrases for explicit edges, same-sentence co-occurrence fallback with
+  canonical ordering.
+- **Traversal.** `neighbors` (both directions, insertion order) and BFS
+  `reachable(from, max_hops)`; all outputs derive from insertion-ordered
+  vectors — fully deterministic.
+- **Normalization decision landed.** The consumer-layer normalization the
+  project deferred is adopted here: the graph lowercases terms for identity.
+  The tokenizer stays lossless.
+
+**Honest corpus note.** The 9.9 KB corpus yields 5 entities and 0
+relationships: its sentences rarely contain two recognized entities. The
+smoke test asserts determinism and structural validity, not edge volume;
+richer corpora (M07 ingestion) will populate edges. Unit tests cover
+relationship behavior exhaustively on crafted input.
+
+**Dependencies.** None (std only).
 
 ---
 
-## M07 — Storage · ⏳ pending
+## M07 — Storage · ⏭ next
 
 **Goal.** Persistence: documents, embeddings, and graph stored in SurrealDB.
 All in-memory index/cache work from M04 becomes durable here; pgvector-style
-vector storage comparisons belong to this milestone too.
+vector storage comparisons belong to this milestone too. Also lands the CLI
+`learn`/`search` workflows, which need chunk-text persistence to be useful
+across runs.
 
 **Dependencies.** M04 (shapes to persist), M06 (graph to persist).
 
