@@ -110,6 +110,14 @@ impl BpeTokenizer {
         self.reverse.get(&rank).map(|token| token.len())
     }
 
+    /// The bytes of one token. Vocabulary building needs the reverse of
+    /// `encode`: ranks come out, bytes go in the vocabulary. Byte-level
+    /// tokens can be arbitrary byte strings, so this returns bytes, not a
+    /// `String`.
+    pub fn token_bytes(&self, rank: Rank) -> Option<&[u8]> {
+        self.reverse.get(&rank).map(|token| &token[..])
+    }
+
     pub fn vocab_size(&self) -> usize {
         self.ranks.len()
     }
