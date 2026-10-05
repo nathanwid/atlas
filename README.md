@@ -10,8 +10,8 @@ against established baselines where honest numbers matter.
 
 ## Status
 
-- **M01 Foundation** — partial: workspace + testing done; CLI, logging, and
-  configuration remain.
+- **M01 Foundation** — complete: CLI wired (learn/similar/graph/search/ask),
+  tracing logging, figment configuration.
 - **M02 Tokenizer** — complete: hand-rolled byte-level BPE, cl100k-verified,
   trained + benchmarked.
 - **M03 Vocabulary** — next.

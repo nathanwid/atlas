@@ -27,7 +27,7 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01 partial, M02 complete, **M03 Vocabulary is next**, M04
+Current status: M01 complete, M02 complete, **M03 Vocabulary is next**, M04
 groundwork pending merge on `atlas/vector-search`.
 
 ## Workflow rules

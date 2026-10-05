@@ -8,7 +8,7 @@ current status.
 
 | Milestone | Name               | Goal                                                    | Status |
 | --------- | ------------------ | ------------------------------------------------------- | ------ |
-| M01       | Foundation         | Workspace, CLI, logging, configuration, testing         | ◐ partial |
+| M01       | Foundation         | Workspace, CLI, logging, configuration, testing         | ✅ complete |
 | M02       | Tokenizer          | Tokenization and text normalization                     | ✅ complete |
 | M03       | Vocabulary         | Token ID management and persistence                     | ⏭ next |
 | M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ◐ groundwork done |
@@ -20,19 +20,19 @@ current status.
 
 ---
 
-## M01 — Foundation · ◐ partial
+## M01 — Foundation · ✅ complete
 
 **Goal.** Workspace, CLI, logging, configuration, and testing foundation.
 
-**Done.** Cargo workspace (7 members), test/bench/clippy/fmt conventions,
-criterion wired.
-
-**Remaining (M01 is its own milestone — not folded into later ones).**
-- Wire `atlas-cli` with clap: `learn`, `similar`, `graph`, `search`, `ask`
-  (placeholder files already match the vision's command names).
-- Structured logging via `tracing` + `tracing-subscriber`.
-- Configuration via `figment` into `atlas-core`'s `config.rs`/`error.rs`
-  placeholders.
+**Delivered.** Cargo workspace with test/bench/clippy/fmt conventions and
+criterion. `atlas-cli` wired with clap: the five vision commands
+(`learn`, `similar`, `graph`, `search`, `ask`) parse, log via `tracing`, and
+dispatch — each reports the milestone that will deliver its functionality
+(no stub logic). Logging via `tracing` + `tracing-subscriber`, configured by
+`RUST_LOG` → `-v/-vv` → config. Configuration via `figment` in `atlas-core`
+(defaults → optional `atlas.toml` → `ATLAS_*` env), with `thiserror`-based
+`AtlasError`. Configuration is deliberately minimal (`log_level` only);
+storage/data-path config is added by the milestone that needs it.
 
 **Dependencies.** None.
 
