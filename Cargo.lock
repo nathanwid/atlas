@@ -189,6 +189,14 @@ version = "0.1.0"
 [[package]]
 name = "atlas-storage"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atlas-embedding",
+ "atlas-tokenizer",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
 
 [[package]]
 name = "atlas-tokenizer"

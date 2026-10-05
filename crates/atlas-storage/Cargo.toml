@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow.workspace = true
+
+[dev-dependencies]
+atlas-embedding = { path = "../atlas-embedding" }
+atlas-tokenizer = { path = "../atlas-tokenizer" }
+serde.workspace = true
+serde_json.workspace = true
+tempfile = "3.27"

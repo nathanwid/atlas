@@ -1,0 +1,44 @@
+{
+  "queries": [
+    {
+      "query": "How does byte pair encoding decide which pieces to merge during training?",
+      "expected": ["count which two pieces sit next to each other most often"]
+    },
+    {
+      "query": "Why must every faster index be compared against the brute force scan?",
+      "expected": ["must be measured against the brute force truth"]
+    },
+    {
+      "query": "What does recall at ten mean when an index returns the wrong top results?",
+      "expected": ["If an index returns the top ten results and only eight"]
+    },
+    {
+      "query": "Why are long documents split into chunks before embedding?",
+      "expected": ["a vector that must stand for everything stands for nothing"]
+    },
+    {
+      "query": "Why does the tokenizer work on bytes instead of letters?",
+      "expected": ["Bytes are honest"]
+    },
+    {
+      "query": "How does encoding decide the order in which merges are replayed?",
+      "expected": ["find the pair whose merge has the lowest rank"]
+    },
+    {
+      "query": "What does the pre-tokenization pattern decide?",
+      "expected": ["The pattern decides where merges may never cross"]
+    },
+    {
+      "query": "How can a graph walk find results that no embedding would rank highly?",
+      "expected": ["drifts along the edges", "never once used the words in the query"]
+    },
+    {
+      "query": "What is the project's attitude toward reporting benchmark numbers?",
+      "expected": ["every number reported even when it is ugly"]
+    },
+    {
+      "query": "Why is chunk size measured in tokens rather than characters?",
+      "expected": ["The size of a chunk is measured in tokens, not characters", "even chunking leans on it"]
+    }
+  ]
+}
