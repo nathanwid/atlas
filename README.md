@@ -18,7 +18,10 @@ against established baselines where honest numbers matter.
   build, versioned binary persistence.
 - **M04 Embedding Engine** — complete: chunking, FastEmbed baseline, vector
   cache, brute-force similarity with recall@k evaluation.
-- **M05 Learning Engine** — next.
+- **M05 Learning Engine** — complete: hand-rolled deterministic Skip-Gram
+  with negative sampling, incremental learning, and mean-pooling text
+  embeddings; FastEmbed stays as the baseline.
+- **M06 Knowledge Graph** — next.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable

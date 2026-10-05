@@ -28,8 +28,8 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01–M04 complete, **M05 Learning Engine is next** (Skip-Gram
-over M03 vocabulary IDs; FastEmbed stays as the comparison baseline).
+Current status: M01–M05 complete, **M06 Knowledge Graph is next** (entity
+extraction and relationship graph); M07–M09 pending.
 
 ## Workflow rules
 

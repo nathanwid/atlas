@@ -14,10 +14,12 @@
 pub mod cache;
 pub mod chunker;
 pub mod embedder;
+pub mod learn;
 
 pub use cache::{CacheKey, VectorCache, cache_key};
 pub use chunker::{Chunk, Chunker};
 pub use embedder::{Embedder, FastembedEmbedder};
+pub use learn::{LearnedEmbedder, SkipGramModel, TrainerConfig, train};
 
 /// Chunk-cache-embed a batch of chunk texts.
 ///
