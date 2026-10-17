@@ -23,7 +23,10 @@ against established baselines where honest numbers matter.
   embeddings; FastEmbed stays as the baseline.
 - **M06 Knowledge Graph** — complete: deterministic entity/relationship
   extraction, directed graph with evidence, BFS traversal; std-only.
-- **M07 Storage** — next.
+- **M07 Storage** — complete: embedded SurrealDB (SurrealKV) persistence for
+  documents, chunks, embeddings, and the graph; `atlas learn` and
+  `atlas search` are live.
+- **M08 Semantic Search** — next.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable

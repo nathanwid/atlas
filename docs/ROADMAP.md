@@ -14,8 +14,8 @@ current status.
 | M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ✅ complete |
 | M05       | Learning Engine    | Skip-Gram training and incremental learning             | ✅ complete |
 | M06       | Knowledge Graph    | Entity extraction and relationship graph                | ✅ complete |
-| M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ⏭ next |
-| M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ⏳ pending |
+| M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ✅ complete |
+| M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ⏭ next |
 | M09       | Question Answering | Answer questions from Atlas knowledge                   | ⏳ pending |
 
 ---
@@ -182,7 +182,7 @@ relationship behavior exhaustively on crafted input.
 
 ---
 
-## M07 — Storage · ⏭ next
+## M07 — Storage · ✅ complete
 
 **Goal.** Persistence: documents, embeddings, and graph stored in SurrealDB.
 All in-memory index/cache work from M04 becomes durable here; pgvector-style
@@ -190,15 +190,52 @@ vector storage comparisons belong to this milestone too. Also lands the CLI
 `learn`/`search` workflows, which need chunk-text persistence to be useful
 across runs.
 
-**Dependencies.** M04 (shapes to persist), M06 (graph to persist).
+**Delivered.** `atlas-storage::store` + `workflow` over an embedded
+SurrealDB 1.5.6 (namespace/db `atlas`):
+
+- **Engine.** In-memory (`mem`) for tests; **SurrealKV** (pure-Rust, in the
+  `surrealdb_unstable` cfg set repo-locally via `.cargo/config.toml`) at
+  `<data_dir>/surreal` for durability. RocksDB was rejected: its C++ build
+  needs libclang. Schemaless tables with deterministic record identities.
+- **Records & ids.** `doc_id` = SHA-256(text); `chunk_id` = `{doc_id}:{ordinal}`;
+  embedding key = `(chunk_id, model_id)`; relationship id = SHA-256 of the
+  triple keys. Every write is an idempotent upsert — **no transactions by
+  design**: duplicate `learn` is a no-op and partial failures are repaired
+  by re-running.
+- **Learn flow.** text → content-addressed document → token-bounded chunks →
+  one batched FastEmbed call → per-chunk graph extraction (evidence
+  `doc_id` = chunk id, the M08 hook) → persistence. Returns a summary;
+  duplicates short-circuit.
+- **Search flow.** Load the `embedding` table for the model, rebuild the
+  exact `BruteForceIndex`, `embed_query`, hydrate chunk text. The M04
+  vector decision stands: no DB-side vector index (MTREE/pgvector remain
+  future alternatives), `VectorIndex` stays the only search surface.
+- **Graph persistence.** Normalized entity/predicate keys, first-seen
+  display labels, directed edges, origins, merged evidence — persisted with
+  insertion ordinals and rebuilt through M06's public builders
+  (`intern_entity`/`intern_predicate`/`link`), so dedup/upgrade/evidence
+  rules re-fire identically. Reconstruction found and fixed a real M06 bug:
+  `intern_predicate` never inserted into its lookup map (duplicate rows,
+  failed lookups); regression test added.
+- **CLI.** `atlas learn <text>` and `atlas search <query> [-k N]` are real
+  (tokio runtime; tokenizer embedded via the atlas-tokenizer
+  `embedded-cl100k` feature so the binary needs no ranks file on disk).
+  `similar`/`graph`/`ask` remain placeholders (M08/M09).
+
+**Dependencies.** M04 (index/embedding), M06 (graph + public builders),
+surrealdb (workspace), sha2, tokio.
 
 ---
 
-## M08 — Semantic Search · ⏳ pending
+## M08 — Semantic Search · ⏭ next
 
 **Goal.** Hybrid vector and graph retrieval: combine similarity search with
-graph traversal, evaluated honestly (recall/latency) against the single-signal
-approaches.
+graph traversal, evaluated honestly (recall/latency) against the
+single-signal approaches.
+
+**Inputs ready.** Search hits carry chunk ids; graph evidence references
+chunk ids (M07), and `neighbors`/`reachable` provide the expansion walk.
+Personalized PageRank / graph scoring is planned here, deferred from M06.
 
 **Dependencies.** M04 (vector search), M06 (graph).
 

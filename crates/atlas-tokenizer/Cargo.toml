@@ -3,6 +3,11 @@ name = "atlas-tokenizer"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Embeds the cl100k ranks file into the binary (CLI convenience; +1.7 MB).
+# Library builds and tests are unaffected without it.
+embedded-cl100k = []
+
 [dependencies]
 fancy-regex.workspace = true
 

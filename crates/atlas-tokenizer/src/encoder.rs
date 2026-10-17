@@ -61,6 +61,17 @@ impl BpeTokenizer {
         )?))
     }
 
+    /// Load the embedded cl100k tokenizer. Available with the
+    /// `embedded-cl100k` feature (used by the CLI so `atlas learn` works
+    /// without a ranks file on disk).
+    #[cfg(feature = "embedded-cl100k")]
+    pub fn embedded_cl100k() -> Self {
+        const RANKS: &str = include_str!("../tests/fixtures/cl100k.tiktoken");
+        let ranks = crate::ranks::parse_tiktoken_ranks(RANKS.as_bytes())
+            .expect("embedded cl100k ranks must parse");
+        Self::from_ranks(ranks)
+    }
+
     pub fn encode(&self, text: &str) -> Vec<Rank> {
         self.encode_with(text, crate::bpe::encode_piece_heap)
     }

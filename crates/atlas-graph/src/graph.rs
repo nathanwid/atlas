@@ -130,6 +130,26 @@ impl KnowledgeGraph {
         self.predicates.get(id as usize).map(String::as_str)
     }
 
+    /// Look up a predicate ID by surface form (normalized before lookup).
+    pub fn find_predicate(&self, predicate: &str) -> Option<PredicateId> {
+        self.predicate_ids.get(&normalize(predicate)).copied()
+    }
+
+    /// The normalized identity key of an entity.
+    pub fn entity_key(&self, id: EntityId) -> Option<String> {
+        self.entities
+            .get(id as usize)
+            .map(|e| normalize(&e.display))
+    }
+
+    /// All predicates, in insertion order.
+    pub fn predicates(&self) -> impl Iterator<Item = (PredicateId, &str)> {
+        self.predicates
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (i as PredicateId, p.as_str()))
+    }
+
     /// The relationship for an ID.
     pub fn relationship(&self, id: RelationshipId) -> Option<&Relationship> {
         self.edges.get(id as usize)
@@ -216,7 +236,11 @@ impl KnowledgeGraph {
     }
 
     /// Intern an entity by display form; identity is the normalized key.
-    pub(crate) fn intern_entity(&mut self, display: &str) -> EntityId {
+    ///
+    /// Public since M07: durable storage reconstructs graphs through these
+    /// builders, which enforce the dedup/upgrade/evidence rules during
+    /// rebuild.
+    pub fn intern_entity(&mut self, display: &str) -> EntityId {
         let key = normalize(display);
         if let Some(&id) = self.entity_ids.get(&key) {
             return id;
@@ -230,13 +254,14 @@ impl KnowledgeGraph {
         id
     }
 
-    pub(crate) fn intern_predicate(&mut self, predicate: &str) -> PredicateId {
+    pub fn intern_predicate(&mut self, predicate: &str) -> PredicateId {
         let key = normalize(predicate);
         if let Some(&id) = self.predicate_ids.get(&key) {
             return id;
         }
         let id = self.predicates.len() as PredicateId;
-        self.predicates.push(key);
+        self.predicates.push(key.clone());
+        self.predicate_ids.insert(key, id);
         id
     }
 
@@ -247,8 +272,9 @@ impl KnowledgeGraph {
     /// when the stronger rule fires; Explicit never downgrades. An Explicit
     /// sighting also upgrades any existing `CoOccurrence` edge between the
     /// same two entities (either direction): explicit evidence raises the
-    /// confidence of the pair's fallback relationship.
-    pub(crate) fn link(
+    /// confidence of the pair's fallback relationship. Public since M07
+    /// (storage reconstruction); see [`KnowledgeGraph::intern_entity`].
+    pub fn link(
         &mut self,
         src: EntityId,
         predicate: PredicateId,
@@ -522,5 +548,21 @@ mod tests {
         assert!(g.set_kind(id, "language"));
         assert_eq!(g.entity(id).unwrap().kind.as_deref(), Some("language"));
         assert!(!g.set_kind(999, "language"));
+    }
+
+    #[test]
+    fn interning_predicates_deduplicates() {
+        // Regression: intern_predicate once never inserted into the lookup
+        // map, so repeated interning pushed duplicate rows and lookups
+        // always failed. Found by M07 graph reconstruction.
+        let mut g = KnowledgeGraph::new();
+        let a = g.intern_predicate("uses");
+        let b = g.intern_predicate("uses");
+        let c = g.intern_predicate("co_occurs_with");
+        let d = g.find_predicate("USES");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert_eq!(d, Some(a));
+        assert_eq!(g.predicate_count(), 2, "no duplicate predicate rows");
     }
 }

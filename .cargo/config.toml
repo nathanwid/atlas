@@ -1,0 +1,7 @@
+# SurrealDB's embedded SurrealKV engine (our durable storage backend) is
+# gated behind this cfg flag upstream. Set repo-locally so no machine-level
+# RUSTFLAGS are needed; the flag is inert for every other crate. See
+# docs/ROADMAP.md (M07) — the lockfile pins surrealdb 1.5.6, so the
+# "unstable" surface is fixed and reviewed.
+[build]
+rustflags = ["--cfg", "surrealdb_unstable"]

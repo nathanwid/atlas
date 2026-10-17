@@ -1,8 +1,8 @@
 //! Command handlers.
 //!
-//! M01 wires the five vision commands end to end: each handler logs its
-//! arguments and reports which milestone will deliver its functionality.
-//! Behavior lands milestone by milestone — no stub logic here.
+//! M01 wired the five vision commands; M07 makes `learn` and `search` real.
+//! Each handler logs its arguments via `tracing`. The remaining commands
+//! still report which milestone will deliver them.
 
 pub mod ask;
 pub mod graph;
@@ -11,15 +11,16 @@ pub mod search;
 pub mod similar;
 
 use crate::cli::Command;
+use atlas_core::Config;
 
 /// Dispatch a parsed command to its handler.
-pub fn run(command: Command) -> anyhow::Result<()> {
+pub async fn run(config: &Config, command: Command) -> anyhow::Result<()> {
     match command {
-        Command::Learn { text } => learn::run(&text),
-        Command::Similar { term } => similar::run(&term),
-        Command::Graph { entity } => graph::run(&entity),
-        Command::Search { query } => search::run(&query),
-        Command::Ask { question } => ask::run(&question),
+        Command::Learn { text } => learn::run(config, &text).await,
+        Command::Similar { term } => similar::run(&term).await,
+        Command::Graph { entity } => graph::run(&entity).await,
+        Command::Search { query, top } => search::run(config, &query, top).await,
+        Command::Ask { question } => ask::run(&question).await,
     }
 }
 
@@ -27,30 +28,33 @@ pub fn run(command: Command) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    /// Every variant dispatches to a handler that succeeds. Handlers print
-    /// their status to stdout; cargo test captures that output by default,
-    /// so no extra capture machinery is needed.
+    /// Placeholder commands still dispatch successfully.
     #[test]
-    fn all_commands_dispatch_successfully() {
+    fn placeholder_commands_dispatch_successfully() {
+        let config = test_config();
         let commands = [
-            Command::Learn {
-                text: "Rust uses Tokio.".into(),
-            },
             Command::Similar {
                 term: "rust".into(),
             },
             Command::Graph {
                 entity: "rust".into(),
             },
-            Command::Search {
-                query: "async".into(),
-            },
             Command::Ask {
                 question: "What does Rust use?".into(),
             },
         ];
         for command in commands {
-            assert!(run(command).is_ok());
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                assert!(run(&config, command).await.is_ok());
+            });
+        }
+    }
+
+    pub(crate) fn test_config() -> Config {
+        Config {
+            log_level: "info".into(),
+            data_dir: std::env::temp_dir().join("atlas-cli-test"),
         }
     }
 }

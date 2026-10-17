@@ -1,12 +1,31 @@
-//! `atlas learn` — learning from text.
+//! `atlas learn` — durable learning (M07).
 //!
-//! Functionality arrives with the vocabulary (M03) and embedding (M04)
-//! milestones: learned text becomes chunks, then embeddings, then knowledge.
+//! input → document → chunks → embeddings → graph → SurrealDB.
 
-pub fn run(text: &str) -> anyhow::Result<()> {
-    tracing::info!(text, "learn invoked");
-    println!(
-        "learn: wired — learning from text arrives with the vocabulary and embedding milestones (M03/M04)."
-    );
+use atlas_core::Config;
+
+pub async fn run(config: &Config, text: &str) -> anyhow::Result<()> {
+    let store = atlas_storage::Store::open_durable(config.data_dir.join("surreal")).await?;
+    let tokenizer = atlas_tokenizer::BpeTokenizer::embedded_cl100k();
+    let embedder = atlas_embedding::FastembedEmbedder::bge_small_en_v1_5()?;
+
+    let summary = atlas_storage::learn(&store, &tokenizer, &embedder, text).await?;
+    if summary.duplicate {
+        println!(
+            "learn: duplicate document ({}, id {}) — nothing to do.",
+            text.len(),
+            summary.doc_id
+        );
+    } else {
+        println!(
+            "learn: stored {} (id {}) — {} chunks, {} embeddings, {} entities, {} relationships.",
+            text.len(),
+            summary.doc_id,
+            summary.chunks,
+            summary.embeddings,
+            summary.entities,
+            summary.relationships
+        );
+    }
     Ok(())
 }
