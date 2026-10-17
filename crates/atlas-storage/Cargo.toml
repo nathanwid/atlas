@@ -2,6 +2,7 @@
 name = "atlas-storage"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -14,5 +15,10 @@ surrealdb.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 serde_json.workspace = true
 tempfile = "3.27"
+
+[[bench]]
+name = "hardening"
+harness = false

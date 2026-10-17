@@ -2,6 +2,7 @@
 name = "atlas-cli"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -11,6 +12,7 @@ atlas-qa = { path = "../../crates/atlas-qa" }
 atlas-storage = { path = "../../crates/atlas-storage" }
 atlas-tokenizer = { path = "../../crates/atlas-tokenizer", features = ["embedded-cl100k"] }
 clap.workspace = true
+tempfile = "3.27"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

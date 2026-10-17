@@ -2,5 +2,13 @@
 name = "atlas-graph"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "pagerank"
+harness = false

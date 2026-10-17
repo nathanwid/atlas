@@ -1,0 +1,8 @@
+# Normalize line endings: LF in the repository and in working trees.
+* text=auto eol=lf
+
+# Binary files (none currently in the repo; declared for safety).
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

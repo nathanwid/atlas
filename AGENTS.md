@@ -76,8 +76,25 @@ was rejected because its C++ build needs libclang. Runtime data lives in
   `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check`
 - One package: `cargo test -p atlas-tokenizer`
 - One test: `cargo test -p atlas-tokenizer -- atlas_matches_tiktoken_on_samples`
-- Benches (criterion, `harness = false` is configured in Cargo.toml):
-  `cargo bench -p atlas-tokenizer`; filter a group: `cargo bench -p atlas-tokenizer -- long_piece`
+- Benches (criterion, `harness = false` is configured in Cargo.toml — they
+  run only via `cargo bench`, never `cargo test`):
+  - `cargo bench -p atlas-tokenizer` (filter a group: `-- long_piece`)
+  - `cargo bench -p atlas-storage --bench hardening` (ingestion, search latency)
+  - `cargo bench -p atlas-graph --bench pagerank` (PPR scaling)
+  - Measured results and methodology: `docs/BENCHMARKS.md`
+
+## Hardening notes (post-M09)
+
+- `atlas_storage::learn` is self-repairing: a document row without its
+  complete chunk set is re-ingested on the next `learn` instead of
+  short-circuiting as a duplicate (regression-tested in
+  `atlas-storage/tests/ingestion_edges.rs`).
+- `Store::delete_chunk` simulates/exercises partial states; retrieval and
+  QA skip evidence referencing deleted chunks instead of failing
+  (`atlas-qa/tests/deleted_evidence.rs`).
+- CLI rejects empty/whitespace `learn` input as a usage error before any
+  store or model access; SurrealDB SDK log noise is filtered by default
+  (`RUST_LOG=surrealdb=info` restores engine-level logs).
 
 ## Tokenizer gotchas (milestone 1, `atlas-tokenizer`)
 

@@ -2,6 +2,7 @@
 name = "atlas-tokenizer"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [features]
 # Embeds the cl100k ranks file into the binary (CLI convenience; +1.7 MB).

@@ -307,6 +307,31 @@ embedding-quality work beyond mean pooling, richer corpora.
 
 ---
 
+## Post-roadmap hardening (complete)
+
+After M09, a hardening pass ran on `atlas/hardening` without changing
+architecture or CLI semantics:
+
+- **Regression safety net** (Phase 1): ingestion edge cases (empty,
+  whitespace-only, oversized single pre-tokens, unicode roundtrip),
+  durable restart recovery with graph-signature comparison, and QA
+  tolerance for evidence referencing deleted chunks. Found and fixed two
+  real defects: `learn`'s duplicate short-circuit could permanently mask
+  partial writes (now self-repairing), and one orphaned
+  embedding→chunk reference failed entire searches (now skipped).
+- **Benchmarks** (Phase 2): committed Criterion benches for ingestion
+  throughput, search latency (query-only vs load+rebuild vs full
+  workflows), and PageRank scaling, plus analytical memory estimates.
+  Measured results: [BENCHMARKS.md](BENCHMARKS.md).
+- **CLI hardening** (Phase 3): empty/whitespace `learn` rejected as a
+  usage error; SurrealDB SDK log noise filtered by default
+  (`RUST_LOG=surrealdb=info` restores it); fresh-directory first-run
+  behavior pinned.
+- **Documentation** (Phase 4): [ARCHITECTURE.md](ARCHITECTURE.md),
+  README quickstart, this section, and repository CI.
+
+---
+
 ## Reconciliation map (old numbering → original roadmap)
 
 Code that already exists was built under a temporary milestone numbering; the

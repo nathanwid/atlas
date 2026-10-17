@@ -34,6 +34,7 @@ pub struct LearnSummary {
 }
 
 /// Learn from a piece of text: chunk, embed, extract, persist.
+/// Learn from a piece of text: chunk, embed, extract, persist.
 pub async fn learn(
     store: &Store,
     tokenizer: &BpeTokenizer,
@@ -41,19 +42,42 @@ pub async fn learn(
     text: &str,
 ) -> anyhow::Result<LearnSummary> {
     let doc_id = doc_id_for(text);
-    if store.document_exists(&doc_id).await? {
-        return Ok(LearnSummary {
-            doc_id,
-            duplicate: true,
-            chunks: 0,
-            embeddings: 0,
-            entities: 0,
-            relationships: 0,
-        });
-    }
-
     let chunker = Chunker::new(tokenizer, 128, 0);
     let chunks = chunker.chunk(text);
+    let chunk_ids: Vec<String> = chunks
+        .iter()
+        .enumerate()
+        .map(|(ordinal, _)| format!("{doc_id}:{ordinal}"))
+        .collect();
+
+    // Duplicate detection doubles as partial-failure repair: the durable
+    // learn flow is a sequence of idempotent upserts with no transaction, so
+    // an interrupted run can leave the document row without all of its
+    // chunks/embeddings. Only a document whose *complete* chunk set exists
+    // counts as a duplicate; a partial one falls through and is repaired by
+    // re-running the idempotent pipeline. (A crash mid-chunk-write can
+    // still leave a gap between two checks — repaired the same way on the
+    // next learn.)
+    if store.document_exists(&doc_id).await? {
+        let mut complete = true;
+        for id in &chunk_ids {
+            if store.get_chunk(id).await?.is_none() {
+                complete = false;
+                break;
+            }
+        }
+        if complete {
+            return Ok(LearnSummary {
+                doc_id,
+                duplicate: true,
+                chunks: 0,
+                embeddings: 0,
+                entities: 0,
+                relationships: 0,
+            });
+        }
+    }
+
     let chunk_texts: Vec<&str> = chunks.iter().map(|c| c.text).collect();
 
     // One batched embedding call for the whole document.
@@ -138,7 +162,10 @@ pub async fn search(
     for hit in crate::index::VectorIndex::search(&index, &query_vector, k) {
         let chunk_id = &embeddings[hit.id as usize].chunk_id;
         let Some(chunk) = store.get_chunk(chunk_id).await? else {
-            anyhow::bail!("embedding references missing chunk {chunk_id}");
+            // Orphaned embedding (its chunk was deleted independently).
+            // Skip rather than fail the whole query: partial states must
+            // degrade, not break retrieval. Re-learn repairs the row.
+            continue;
         };
         results.push(SearchResult {
             chunk_id: chunk.chunk_id,
