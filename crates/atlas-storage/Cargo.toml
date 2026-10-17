@@ -14,5 +14,10 @@ surrealdb.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 serde_json.workspace = true
 tempfile = "3.27"
+
+[[bench]]
+name = "hardening"
+harness = false

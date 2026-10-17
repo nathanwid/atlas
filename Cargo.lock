@@ -329,6 +329,7 @@ dependencies = [
  "atlas-storage",
  "atlas-tokenizer",
  "clap",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -362,6 +363,9 @@ dependencies = [
 [[package]]
 name = "atlas-graph"
 version = "0.1.0"
+dependencies = [
+ "criterion",
+]
 
 [[package]]
 name = "atlas-qa"
@@ -384,6 +388,7 @@ dependencies = [
  "atlas-embedding",
  "atlas-graph",
  "atlas-tokenizer",
+ "criterion",
  "serde",
  "serde_json",
  "sha2 0.11.0",
