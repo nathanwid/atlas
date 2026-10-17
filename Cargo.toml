@@ -11,6 +11,11 @@ members = [
 ]
 resolver = "3"
 
+[workspace.package]
+# Verified: `cargo +1.89 check --workspace` passes; 1.85 fails because
+# lockfile dependencies (uuid, time, serde_with, psm) require 1.88+.
+rust-version = "1.89"
+
 [workspace.dependencies]
 # CLI
 clap = { version = "4", features = ["derive"] }
