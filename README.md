@@ -10,35 +10,42 @@ against established baselines where honest numbers matter.
 
 ## Status
 
-- **M01 Foundation** — complete: CLI wired (learn/similar/graph/search/ask),
-  tracing logging, figment configuration.
-- **M02 Tokenizer** — complete: hand-rolled byte-level BPE, cl100k-verified,
-  trained + benchmarked.
-- **M03 Vocabulary** — complete: byte-keyed dense token IDs, deterministic
-  build, versioned binary persistence.
-- **M04 Embedding Engine** — complete: chunking, FastEmbed baseline, vector
-  cache, brute-force similarity with recall@k evaluation.
-- **M05 Learning Engine** — complete: hand-rolled deterministic Skip-Gram
-  with negative sampling, incremental learning, and mean-pooling text
-  embeddings; FastEmbed stays as the baseline.
-- **M06 Knowledge Graph** — complete: deterministic entity/relationship
-  extraction, directed graph with evidence, BFS traversal; std-only.
-- **M07 Storage** — complete: embedded SurrealDB (SurrealKV) persistence for
-  documents, chunks, embeddings, and the graph; `atlas learn` and
-  `atlas search` are live.
-- **M08 Semantic Search** — complete: hybrid retrieval fusing exact vector
-  search with personalized-PageRank graph expansion, evaluated honestly
-  against both single-signal baselines.
-- **M09 Question Answering** — complete: `atlas ask` answers from stored
-  knowledge with extractive, cited, confidence-scored evidence — no LLM.
+All nine roadmap milestones are complete — tokenizer, vocabulary,
+embedding engine, learning engine, knowledge graph, storage, semantic
+search, and question answering. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for what shipped in each,
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit
+together, [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for measured results,
+and [docs/PROJECT.md](docs/PROJECT.md) for vision and stable project
+decisions.
 
-All nine roadmap milestones are complete. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for what shipped in each and for
-optional next directions.
+## Quickstart
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
-[docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable
-project decisions.
+Prerequisites: Rust 1.85 or newer (stable). The first `learn` downloads the
+FastEmbed model (~100 MB) into `.fastembed_cache/` — later runs are
+offline. All data lives under `atlas-data/` (created on demand;
+gitignored).
+
+```sh
+cargo run -p atlas-cli -- learn "Rust uses Tokio for async runtimes."
+# learn: stored 35 (id 85e6be14…) — 1 chunks, 1 embeddings, 2 entities, 1 relationships.
+
+cargo run -p atlas-cli -- search "tokio async runtime" -k 3
+# #0 source=vector score=0.8204 chunk=85e6be14… doc=85e6be14…
+#   via vector rank 1 (score 0.8204)
+#   Rust uses Tokio for async runtimes.
+
+cargo run -p atlas-cli -- ask "What uses Tokio?"
+# From the knowledge graph: Rust -[uses]-> Tokio.
+# From the learned content:
+# 1. "Rust uses Tokio for async runtimes" [doc 85e6be14, chunk 85e6be14]
+# Confidence: high.
+```
+
+Learning the same text twice is a no-op (content-addressed documents).
+Empty or whitespace-only `learn` input is rejected as a usage error.
+Override the data directory with `ATLAS_DATA_DIR=/some/dir` or an
+`atlas.toml` file.
 
 ## Build and test
 
@@ -47,5 +54,22 @@ cargo build
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
+```
+
+Benchmarks (tokenizer, ingestion, search latency, PageRank scaling) are
+measured and documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md):
+
+```sh
 cargo bench -p atlas-tokenizer
+cargo bench -p atlas-storage --bench hardening
+cargo bench -p atlas-graph --bench pagerank
+```
+
+## Troubleshooting
+
+SurrealDB SDK logging is filtered out by default (its shutdown path emits
+harmless ERROR noise). To see engine-level logs when debugging storage:
+
+```sh
+RUST_LOG=surrealdb=info cargo run -p atlas-cli -- search "tokio"
 ```
