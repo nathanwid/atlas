@@ -21,12 +21,14 @@
 //! later without schema changes.
 
 pub mod brute;
+pub mod hybrid;
 pub mod index;
 pub mod records;
 pub mod store;
 pub mod workflow;
 
 pub use brute::BruteForceIndex;
+pub use hybrid::{HybridConfig, HybridResult, ResultSource, SearchMode, hybrid_search};
 pub use index::{SearchHit, VectorIndex};
 pub use records::{
     ChunkRecord, DocumentRecord, EmbeddingRecord, EntityRecord, EvidenceRecord, PredicateRecord,

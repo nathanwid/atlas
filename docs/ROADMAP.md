@@ -15,8 +15,8 @@ current status.
 | M05       | Learning Engine    | Skip-Gram training and incremental learning             | ✅ complete |
 | M06       | Knowledge Graph    | Entity extraction and relationship graph                | ✅ complete |
 | M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ✅ complete |
-| M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ⏭ next |
-| M09       | Question Answering | Answer questions from Atlas knowledge                   | ⏳ pending |
+| M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ✅ complete |
+| M09       | Question Answering | Answer questions from Atlas knowledge                   | ⏭ next |
 
 ---
 
@@ -227,15 +227,42 @@ surrealdb (workspace), sha2, tokio.
 
 ---
 
-## M08 — Semantic Search · ⏭ next
+## M08 — Semantic Search · ✅ complete
 
 **Goal.** Hybrid vector and graph retrieval: combine similarity search with
-graph traversal, evaluated honestly (recall/latency) against the
-single-signal approaches.
+graph traversal, evaluated honestly (recall) against the single-signal
+approaches.
 
-**Inputs ready.** Search hits carry chunk ids; graph evidence references
-chunk ids (M07), and `neighbors`/`reachable` provide the expansion walk.
-Personalized PageRank / graph scoring is planned here, deferred from M06.
+**Delivered.**
+
+- **`atlas-graph::personalized_pagerank`** — hand-rolled PPR over the
+  undirected view of the relationship graph (std-only, deterministic):
+  seeded restart, damping 0.85, dangling nodes teleport to seeds, f64
+  accumulation in fixed order, ties by entity ID.
+- **`atlas-storage::hybrid_search`** — two stages, fused by reciprocal rank
+  (RRF, constant 60): the vector stage ranks seeds by real cosine scores,
+  the graph stage ranks expansion chunks by PPR mass (seed chunks from the
+  query anchor the walk; expansion is hop-bounded and cycle-safe; chunks
+  found by both stages are marked `Both`). Fusion is rank-based, so no
+  fabricated similarity numbers enter the ordering; every result carries
+  per-stage provenance (`via`).
+- **CLI.** `atlas search <query> [-k N] [--mode vector|hybrid|graph]`,
+  default hybrid. `vector` is the exact M07 baseline; `graph` returns only
+  expansion chunks.
+- **Evaluation** (crafted 8-doc fixture with a designed relationship chain,
+  deterministic word-overlap embedder, recall@3, report + mechanics):
+  - Query 1 (gold reachable only via the graph): vector **0.5**, hybrid
+    **1.0** — the graph-only gold chunk is recovered.
+  - Query 2 (vector already saturated): vector **1.0**, hybrid **0.5** —
+    RRF tie-breaks can displace correct vector hits. Hybrid is **not**
+    claimed better; both directions are pinned by deterministic tests.
+
+**Boundary notes.** `atlas-graph` remains std-only and SurrealDB-free (PPR
+runs on the in-memory graph loaded from M07 tables). M09 question answering
+is the only remaining milestone; GraphRAG/LLM extraction stay out.
+
+**Dependencies.** M04 (vector stage), M06 (graph walk), M07 (persistence +
+chunk-keyed evidence). None new.
 
 **Dependencies.** M04 (vector search), M06 (graph).
 

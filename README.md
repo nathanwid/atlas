@@ -26,7 +26,10 @@ against established baselines where honest numbers matter.
 - **M07 Storage** — complete: embedded SurrealDB (SurrealKV) persistence for
   documents, chunks, embeddings, and the graph; `atlas learn` and
   `atlas search` are live.
-- **M08 Semantic Search** — next.
+- **M08 Semantic Search** — complete: hybrid retrieval fusing exact vector
+  search with personalized-PageRank graph expansion, evaluated honestly
+  against both single-signal baselines.
+- **M09 Question Answering** — next.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable
