@@ -7,6 +7,7 @@ edition = "2024"
 anyhow.workspace = true
 atlas-core = { path = "../../crates/atlas-core" }
 atlas-embedding = { path = "../../crates/atlas-embedding" }
+atlas-qa = { path = "../../crates/atlas-qa" }
 atlas-storage = { path = "../../crates/atlas-storage" }
 atlas-tokenizer = { path = "../../crates/atlas-tokenizer", features = ["embedded-cl100k"] }
 clap.workspace = true

@@ -325,6 +325,7 @@ dependencies = [
  "anyhow",
  "atlas-core",
  "atlas-embedding",
+ "atlas-qa",
  "atlas-storage",
  "atlas-tokenizer",
  "clap",
@@ -361,6 +362,19 @@ dependencies = [
 [[package]]
 name = "atlas-graph"
 version = "0.1.0"
+
+[[package]]
+name = "atlas-qa"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atlas-embedding",
+ "atlas-graph",
+ "atlas-storage",
+ "atlas-tokenizer",
+ "tempfile",
+ "tokio",
+]
 
 [[package]]
 name = "atlas-storage"

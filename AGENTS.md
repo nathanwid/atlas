@@ -28,8 +28,11 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01–M08 complete, **M09 Question Answering is next** (answer
-from stored knowledge via M07 retrieval + M06 graph; no LLM).
+Current status: **all nine milestones (M01–M09) are complete.** Atlas answers
+questions from its own knowledge via `atlas ask`. Beyond the roadmap, work
+is opt-in by decision: LLM answer generation over QA retrieval,
+multi-turn conversation state, embedding-quality improvements, richer
+corpora. Anything new needs an approved plan first.
 
 Storage gotcha: the durable SurrealDB engine is SurrealKV behind the
 `surrealdb_unstable` cfg (set repo-locally in `.cargo/config.toml`); RocksDB

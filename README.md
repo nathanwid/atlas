@@ -29,7 +29,12 @@ against established baselines where honest numbers matter.
 - **M08 Semantic Search** — complete: hybrid retrieval fusing exact vector
   search with personalized-PageRank graph expansion, evaluated honestly
   against both single-signal baselines.
-- **M09 Question Answering** — next.
+- **M09 Question Answering** — complete: `atlas ask` answers from stored
+  knowledge with extractive, cited, confidence-scored evidence — no LLM.
+
+All nine roadmap milestones are complete. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for what shipped in each and for
+optional next directions.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan and
 [docs/PROJECT.md](docs/PROJECT.md) for vision, architecture, and stable

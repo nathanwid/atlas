@@ -16,7 +16,7 @@ current status.
 | M06       | Knowledge Graph    | Entity extraction and relationship graph                | ✅ complete |
 | M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ✅ complete |
 | M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ✅ complete |
-| M09       | Question Answering | Answer questions from Atlas knowledge                   | ⏭ next |
+| M09       | Question Answering | Answer questions from Atlas knowledge                   | ✅ complete |
 
 ---
 
@@ -220,7 +220,8 @@ SurrealDB 1.5.6 (namespace/db `atlas`):
 - **CLI.** `atlas learn <text>` and `atlas search <query> [-k N]` are real
   (tokio runtime; tokenizer embedded via the atlas-tokenizer
   `embedded-cl100k` feature so the binary needs no ranks file on disk).
-  `similar`/`graph`/`ask` remain placeholders (M08/M09).
+  `similar`/`graph` remain placeholders (hybrid retrieval lives inside
+  `search`; dedicated `similar`/`graph` views are optional follow-ups).
 
 **Dependencies.** M04 (index/embedding), M06 (graph + public builders),
 surrealdb (workspace), sha2, tokio.
@@ -268,12 +269,41 @@ chunk-keyed evidence). None new.
 
 ---
 
-## M09 — Question Answering · ⏳ pending
+## M09 — Question Answering · ✅ complete
 
 **Goal.** Answer questions from Atlas's own knowledge: retrieve relevant
-facts via M08 and compose answers from stored relationships. No LLM required.
+facts via M08 and compose answers from stored evidence. No LLM required.
 
-**Dependencies.** M08.
+**Delivered.** `atlas-qa` (new crate) — deterministic extractive question
+answering over M07/M08 data:
+
+- **Flow.** question → M08 hybrid retrieval → sentence split →
+  question-word-overlap scoring → verbatim answer sentences with
+  `[document, chunk]` citations → confidence (High/Medium/Low from
+  retrieval score + overlap).
+- **Graph lead-ins.** Relationship-shaped questions produce a lead-in from
+  the persisted graph ("From the knowledge graph: Rust -[uses]-> Tokio."),
+  deterministic in relationship insertion order.
+- **Honesty.** Empty retrieval or zero question overlap ⇒ `insufficient`
+  (no fabrication). Multi-document evidence is flagged as such; sentences
+  are quoted verbatim, so contradictions surface as adjacent quotes rather
+  than being resolved invisibly.
+- **Determinism.** Word-overlap scoring with fixed tie-breaks; identical
+  store + question ⇒ identical answer (test-pinned).
+- **CLI.** `atlas ask <question>` answers from durable data with
+  citations, confidence, and honest insufficiency messages.
+- **Evaluation.** Crafted fixture, offline and deterministic: grounding
+  (verbatim substrings), citation accuracy, full traceability
+  (question → sentence → chunk → document), insufficient-evidence paths,
+  confidence buckets, multi-source provenance, determinism, graph
+  lead-ins — all test-pinned.
+
+**The original roadmap is complete.** All nine milestones shipped. Natural
+next steps (all optional, none scheduled): LLM answer generation as an
+opt-in integration over QA retrieval, multi-turn conversation state,
+embedding-quality work beyond mean pooling, richer corpora.
+
+**Dependencies.** M07 (persistence), M08 (hybrid retrieval). None new.
 
 ---
 

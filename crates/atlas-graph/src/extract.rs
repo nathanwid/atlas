@@ -206,8 +206,9 @@ fn is_capitalized(word: &Word) -> bool {
 
 /// Split into sentences at `.`, `!`, `?`, and newlines. Decimal points
 /// inside numbers will split — a documented heuristic, acceptable for an
-/// educational extractor.
-fn sentences(text: &str) -> Vec<String> {
+/// educational extractor. Public since M09: question answering reuses this
+/// for context assembly.
+pub fn sentences(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
     for c in text.chars() {

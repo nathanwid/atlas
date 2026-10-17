@@ -1,0 +1,15 @@
+[package]
+name = "atlas-qa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+atlas-embedding = { path = "../atlas-embedding" }
+atlas-graph = { path = "../atlas-graph" }
+atlas-storage = { path = "../atlas-storage" }
+
+[dev-dependencies]
+atlas-tokenizer = { path = "../atlas-tokenizer" }
+tempfile = "3.27"
+tokio.workspace = true
