@@ -20,7 +20,7 @@ pub async fn run(config: &Config, command: Command) -> anyhow::Result<()> {
         Command::Similar { term } => similar::run(&term).await,
         Command::Graph { entity } => graph::run(&entity).await,
         Command::Search { query, top, mode } => search::run(config, &query, top, mode).await,
-        Command::Ask { question } => ask::run(&question).await,
+        Command::Ask { question } => ask::run(config, &question).await,
     }
 }
 
