@@ -166,7 +166,7 @@ mod tests {
     /// real BPE tables are laid out.
     fn toy_ranks() -> Ranks {
         let mut ranks = Ranks::new();
-        for (i, b) in [b'a', b'b', b'c'].iter().enumerate() {
+        for (i, b) in b"abc".iter().enumerate() {
             ranks.insert(vec![*b].into(), i as Rank);
         }
         for (i, s) in [b"ab".as_slice(), b"bc", b"abc", b"aab", b"cc", b"abcc"]
