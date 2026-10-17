@@ -11,6 +11,7 @@ atlas-qa = { path = "../../crates/atlas-qa" }
 atlas-storage = { path = "../../crates/atlas-storage" }
 atlas-tokenizer = { path = "../../crates/atlas-tokenizer", features = ["embedded-cl100k"] }
 clap.workspace = true
+tempfile = "3.27"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
