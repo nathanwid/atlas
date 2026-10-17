@@ -72,6 +72,14 @@ impl Store {
         Ok(self.db.select(("chunk", chunk_id)).await?)
     }
 
+    /// Remove one chunk row. Used by hardening tests to simulate partial
+    /// states; evidence referencing the deleted chunk is skipped by
+    /// retrieval and QA.
+    pub async fn delete_chunk(&self, chunk_id: &str) -> anyhow::Result<()> {
+        let _: Option<ChunkRecord> = self.db.delete(("chunk", chunk_id)).await?;
+        Ok(())
+    }
+
     pub async fn upsert_embedding(&self, embedding: &EmbeddingRecord) -> anyhow::Result<()> {
         // Embedding key is (chunk_id, model_id); record id joins both.
         let id = format!("{}:{}", embedding.model_id, embedding.chunk_id);
