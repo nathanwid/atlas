@@ -28,9 +28,13 @@ Engine, Learning Engine, Knowledge Graph, Storage, Semantic Search, Question
 Answering). Scope, deliverables, and status per milestone live in
 `docs/ROADMAP.md` — do not rely on this file for sequencing details.
 
-Current status: M01–M06 complete, **M07 Storage is next** (SurrealDB
-persistence for documents, embeddings, and the graph, plus the CLI
-learn/search workflows); M08–M09 pending.
+Current status: M01–M07 complete, **M08 Semantic Search is next** (hybrid
+vector + graph retrieval; personalized PageRank lands here); M09 pending.
+
+Storage gotcha: the durable SurrealDB engine is SurrealKV behind the
+`surrealdb_unstable` cfg (set repo-locally in `.cargo/config.toml`); RocksDB
+was rejected because its C++ build needs libclang. Runtime data lives in
+`atlas-data/` (gitignored).
 
 ## Workflow rules
 

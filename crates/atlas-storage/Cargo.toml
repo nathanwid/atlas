@@ -5,10 +5,14 @@ edition = "2024"
 
 [dependencies]
 anyhow.workspace = true
-
-[dev-dependencies]
 atlas-embedding = { path = "../atlas-embedding" }
+atlas-graph = { path = "../atlas-graph" }
 atlas-tokenizer = { path = "../atlas-tokenizer" }
 serde.workspace = true
+sha2.workspace = true
+surrealdb.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
 serde_json.workspace = true
 tempfile = "3.27"

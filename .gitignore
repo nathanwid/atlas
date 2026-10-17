@@ -27,3 +27,6 @@ rustc-ice-*.txt
 
 # fastembed model weights (downloaded by atlas-embedding tests)
 .fastembed_cache/
+
+# Atlas runtime data (durable store, default data_dir)
+atlas-data/

@@ -16,19 +16,23 @@ use figment::{
     providers::{Env, Format, Serialized, Toml},
 };
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Atlas configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     /// Maximum log level (`trace`, `debug`, `info`, `warn`, `error`).
     pub log_level: String,
+    /// Directory for durable storage (M07). The SurrealDB database lives at
+    /// `<data_dir>/surreal`.
+    pub data_dir: PathBuf,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             log_level: "info".to_string(),
+            data_dir: PathBuf::from("atlas-data"),
         }
     }
 }

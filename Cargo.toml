@@ -18,7 +18,12 @@ clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 
 # Storage
-surrealdb = "1"
+# kv-mem: in-memory engine for tests; kv-surrealkv: embedded durable engine
+# (pure Rust — RocksDB's C++ build needs libclang, which is not assumed)
+surrealdb = { version = "1", features = ["kv-mem", "kv-surrealkv"] }
+
+# Hashing (content-addressed ids)
+sha2 = "0.11"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

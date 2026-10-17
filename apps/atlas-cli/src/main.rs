@@ -11,12 +11,13 @@ use atlas_core::Config;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = cli::Cli::parse();
     let config = Config::load()?;
     init_logging(&config, args.verbose);
     tracing::debug!(command = ?args.command, "dispatching");
-    commands::run(args.command)
+    commands::run(&config, args.command).await
 }
 
 /// Initialize `tracing` from RUST_LOG, falling back to -v/-vv, falling back

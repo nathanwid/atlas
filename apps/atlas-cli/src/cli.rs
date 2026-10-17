@@ -42,6 +42,9 @@ pub enum Command {
     Search {
         /// Free-text query.
         query: String,
+        /// Number of results to return.
+        #[arg(short = 'k', long, default_value_t = 5)]
+        top: usize,
     },
     /// Ask a question over Atlas's own knowledge.
     Ask {
@@ -79,10 +82,17 @@ mod tests {
             parse(&["graph", "rust"]).unwrap().command,
             Command::Graph { .. }
         ));
-        assert!(matches!(
-            parse(&["search", "async"]).unwrap().command,
-            Command::Search { .. }
-        ));
+        let search = parse(&["search", "async"]).unwrap().command;
+        let Command::Search { query, top } = search else {
+            panic!("expected search");
+        };
+        assert_eq!(query, "async");
+        assert_eq!(top, 5, "default k");
+        let search = parse(&["search", "async", "-k", "3"]).unwrap().command;
+        let Command::Search { top, .. } = search else {
+            panic!("expected search");
+        };
+        assert_eq!(top, 3);
         assert!(matches!(
             parse(&["ask", "What does Rust use?"]).unwrap().command,
             Command::Ask { .. }
