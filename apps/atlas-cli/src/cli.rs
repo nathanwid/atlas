@@ -6,7 +6,15 @@
 //! structure here is the part later milestones extend — subcommands gain
 //! flags and handlers gain behavior without redesign.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+/// Retrieval mode for `atlas search`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SearchModeArg {
+    Vector,
+    Hybrid,
+    Graph,
+}
 
 /// Atlas — a semantic learning engine that learns from text.
 #[derive(Parser, Debug)]
@@ -45,6 +53,10 @@ pub enum Command {
         /// Number of results to return.
         #[arg(short = 'k', long, default_value_t = 5)]
         top: usize,
+        /// Retrieval mode: hybrid (vector + graph expansion, default),
+        /// vector (M07 baseline), or graph (expansion only).
+        #[arg(long, value_enum, default_value_t = SearchModeArg::Hybrid)]
+        mode: SearchModeArg,
     },
     /// Ask a question over Atlas's own knowledge.
     Ask {
@@ -83,16 +95,20 @@ mod tests {
             Command::Graph { .. }
         ));
         let search = parse(&["search", "async"]).unwrap().command;
-        let Command::Search { query, top } = search else {
+        let Command::Search { query, top, mode } = search else {
             panic!("expected search");
         };
         assert_eq!(query, "async");
         assert_eq!(top, 5, "default k");
-        let search = parse(&["search", "async", "-k", "3"]).unwrap().command;
-        let Command::Search { top, .. } = search else {
+        assert_eq!(mode, SearchModeArg::Hybrid, "default mode is hybrid");
+        let search = parse(&["search", "async", "-k", "3", "--mode", "vector"])
+            .unwrap()
+            .command;
+        let Command::Search { top, mode, .. } = search else {
             panic!("expected search");
         };
         assert_eq!(top, 3);
+        assert_eq!(mode, SearchModeArg::Vector);
         assert!(matches!(
             parse(&["ask", "What does Rust use?"]).unwrap().command,
             Command::Ask { .. }

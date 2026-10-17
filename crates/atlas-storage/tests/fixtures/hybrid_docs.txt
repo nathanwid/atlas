@@ -1,0 +1,8 @@
+Rust uses Tokio for async runtimes.
+Tokio requires Cargo metadata files.
+Cargo extends Rust tooling.
+Python provides PyO3 bindings.
+Rust requires PyO3 for bindings.
+Atlas is a learning engine project.
+The tokenizer splits bytes into pieces.
+SurrealDB stores documents durably.

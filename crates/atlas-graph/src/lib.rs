@@ -20,9 +20,11 @@
 
 pub mod extract;
 pub mod graph;
+pub mod pagerank;
 
 pub use extract::{Extractor, ExtractorConfig};
 pub use graph::{
     Direction, EdgeOrigin, Entity, EntityId, Evidence, KnowledgeGraph, Neighbor, PredicateId,
     Relationship, RelationshipId, normalize,
 };
+pub use pagerank::personalized_pagerank;
