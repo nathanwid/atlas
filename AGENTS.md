@@ -34,10 +34,16 @@ is opt-in by decision: LLM answer generation over QA retrieval,
 multi-turn conversation state, embedding-quality improvements, richer
 corpora. Anything new needs an approved plan first.
 
-Storage gotcha: the durable SurrealDB engine is SurrealKV behind the
-`surrealdb_unstable` cfg (set repo-locally in `.cargo/config.toml`); RocksDB
-was rejected because its C++ build needs libclang. Runtime data lives in
-`atlas-data/` (gitignored).
+Storage gotcha: the production backend is SQLite (`rusqlite`, bundled
+SQLite) at `atlas-data/atlas.db` — WAL journal, `synchronous=FULL`, one
+atomic transaction per `learn` (`Backend::apply_learn_write`). A runtime
+test guards the linked SQLite version (≥ 3.51.3, the WAL-reset fix);
+bumping `rusqlite` must keep the bundled engine above that floor.
+SurrealDB/SurrealKV was removed after the storage evaluation; its old
+data directory `atlas-data/surreal/` is kept only as a forensic artifact
+and can be deleted manually. Runtime data lives in `atlas-data/`
+(gitignored) and is regenerable by re-running `learn` over a source
+corpus.
 
 ## Workflow rules
 
@@ -89,12 +95,11 @@ was rejected because its C++ build needs libclang. Runtime data lives in
   complete chunk set is re-ingested on the next `learn` instead of
   short-circuiting as a duplicate (regression-tested in
   `atlas-storage/tests/ingestion_edges.rs`).
-- `Store::delete_chunk` simulates/exercises partial states; retrieval and
-  QA skip evidence referencing deleted chunks instead of failing
+- `SqliteStore::delete_chunk` simulates/exercises partial states; retrieval
+  and QA skip evidence referencing deleted chunks instead of failing
   (`atlas-qa/tests/deleted_evidence.rs`).
 - CLI rejects empty/whitespace `learn` input as a usage error before any
-  store or model access; SurrealDB SDK log noise is filtered by default
-  (`RUST_LOG=surrealdb=info` restores engine-level logs).
+  store or model access.
 
 ## Tokenizer gotchas (milestone 1, `atlas-tokenizer`)
 

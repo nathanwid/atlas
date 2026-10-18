@@ -143,7 +143,7 @@ Knowledge Graph   Vector Search
 | Language       | Rust                  | Primary programming language         | ✅      |
 | CLI            | clap                  | Command-line interface               | ✅ (M01) |
 | Async runtime  | tokio                 | Asynchronous runtime                 | 🔜      |
-| Storage        | SurrealDB             | Documents, graph, and vector storage | 🔜 (M07) |
+| Storage        | rusqlite (SQLite)     | Documents, graph, and vector storage | ✅ (M07; SQLite-only since the post-M09 migration) |
 | Embeddings     | fastembed             | Pretrained embedding baseline (M04)  | ✅      |
 | Serialization  | serde                 | Serialization framework              | ✅      |
 | JSON           | serde_json            | JSON support                         | ✅      |
@@ -214,8 +214,14 @@ These are settled decisions. Changing any of them requires explicit approval.
 3. **FastEmbed is a baseline, not the destination.** Atlas's own learned
    embeddings belong to M05 (Skip-Gram training and incremental learning),
    with the pretrained path kept as a comparison baseline.
-4. **Storage, including SurrealDB/pgvector integration, belongs to M07.**
-   Earlier index work is in-memory groundwork.
+4. **Storage is embedded SQLite** (`rusqlite`, bundled SQLite ≥ 3.51.3,
+   WAL journal, `synchronous=FULL`, one atomic transaction per `learn`).
+   The M07 implementation used SurrealDB 1.5.6 on the SurrealKV engine; it
+   was replaced after the SQLite proof-of-concept measured equal-or-better
+   retrieval latency, specified durability semantics, no unstable cfg
+   gates, and a much smaller dependency surface — SurrealDB was used purely
+   as a keyed record store. `atlas-data/atlas.db` is the store; `atlas-data`
+   is regenerable by re-running `learn` over a source corpus.
 5. **Reuse existing infrastructure.** Do not duplicate what a crate already
    provides; do not unnecessarily rewrite working code.
 6. **No text normalization inside the tokenizer.** The byte-level tokenizer
