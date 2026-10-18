@@ -16,7 +16,8 @@
 use crate::answer::{Answer, AnswerSentence, Confidence};
 use atlas_embedding::Embedder;
 use atlas_graph::normalize;
-use atlas_storage::Store;
+use atlas_storage::Backend;
+use atlas_storage::SqliteStore;
 
 /// Hybrid retrieval depth.
 const RETRIEVAL_K: usize = 5;
@@ -26,7 +27,11 @@ const MAX_SENTENCES: usize = 3;
 const MAX_LEAD_INS: usize = 2;
 
 /// Answer `question` from the store's learned content.
-pub async fn ask(store: &Store, embedder: &dyn Embedder, question: &str) -> anyhow::Result<Answer> {
+pub async fn ask(
+    store: &SqliteStore,
+    embedder: &dyn Embedder,
+    question: &str,
+) -> anyhow::Result<Answer> {
     let hits = atlas_storage::hybrid_search(
         store,
         embedder,
@@ -104,7 +109,7 @@ pub async fn ask(store: &Store, embedder: &dyn Embedder, question: &str) -> anyh
 /// every relationship whose source or destination entity appears in the
 /// question produces one line, in graph insertion order (deterministic),
 /// capped at [`MAX_LEAD_INS`].
-async fn graph_lead_in(store: &Store, question: &str) -> anyhow::Result<Option<String>> {
+async fn graph_lead_in(store: &SqliteStore, question: &str) -> anyhow::Result<Option<String>> {
     let graph = store.load_graph().await?;
     if graph.relationship_count() == 0 {
         return Ok(None);

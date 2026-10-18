@@ -1,4 +1,3 @@
-#![cfg(feature = "sqlite-backend")]
 //! Process-crash recovery for the SQLite backend (storage PoC).
 //!
 //! A child process opens the durable SQLite store, commits exactly one

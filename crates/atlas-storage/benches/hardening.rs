@@ -7,8 +7,9 @@
 //! selection) and happens in setup, excluded from timing.
 
 use atlas_embedding::Embedder;
+use atlas_storage::backend::Backend;
 use atlas_storage::{BruteForceIndex, VectorIndex};
-use atlas_storage::{HybridConfig, SearchMode, Store, hybrid_search, learn, search};
+use atlas_storage::{HybridConfig, SearchMode, SqliteStore, hybrid_search, learn, search};
 use atlas_tokenizer::BpeTokenizer;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -103,7 +104,7 @@ fn bench_ingestion(c: &mut Criterion) {
         group.bench_function(format!("{n}_docs"), |b| {
             b.iter_batched(
                 || {
-                    let store = rt.block_on(async { Store::open_mem().await.unwrap() });
+                    let store = rt.block_on(async { SqliteStore::open_mem().await.unwrap() });
                     let docs: Vec<String> = (0..n).map(|_| unique_doc()).collect();
                     (store, docs)
                 },
@@ -138,7 +139,7 @@ fn bench_search(c: &mut Criterion) {
     group.sample_size(20);
     for n in [100usize, 1000] {
         // Setup (untimed): learn N one-chunk documents, snapshot vectors.
-        let store = rt.block_on(async { Store::open_mem().await.unwrap() });
+        let store = rt.block_on(async { SqliteStore::open_mem().await.unwrap() });
         for _ in 0..n {
             let doc = unique_doc();
             rt.block_on(async { learn(&store, &tok, &embedder, &doc).await.unwrap() });

@@ -5,7 +5,7 @@
 use atlas_core::Config;
 
 pub async fn run(config: &Config, question: &str) -> anyhow::Result<()> {
-    let store = atlas_storage::Store::open_durable(config.data_dir.join("surreal")).await?;
+    let store = atlas_storage::SqliteStore::open_durable(config.data_dir.join("atlas.db")).await?;
     let embedder = atlas_embedding::FastembedEmbedder::bge_small_en_v1_5()?;
 
     let answer = atlas_qa::ask(&store, &embedder, question).await?;

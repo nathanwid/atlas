@@ -8,7 +8,8 @@
 //! (src key, predicate, dst key, origin, evidence) with merged evidence.
 
 use atlas_embedding::Embedder;
-use atlas_storage::{HybridConfig, SearchMode, Store, hybrid_search, learn};
+use atlas_storage::Backend;
+use atlas_storage::{HybridConfig, SearchMode, SqliteStore, hybrid_search, learn};
 use atlas_tokenizer::BpeTokenizer;
 use std::collections::HashSet;
 
@@ -134,14 +135,14 @@ async fn durable_restart_preserves_graph_and_retrieval() {
 
     let before_signature;
     {
-        let store = Store::open_durable(&db_path).await.unwrap();
+        let store = SqliteStore::open_durable(&db_path).await.unwrap();
         for doc in &docs {
             learn(&store, &tok, &embedder, doc).await.unwrap();
         }
         before_signature = signature(&store.load_graph().await.unwrap());
     } // handle dropped
 
-    let reopened = Store::open_durable(&db_path).await.unwrap();
+    let reopened = SqliteStore::open_durable(&db_path).await.unwrap();
     let after = reopened.load_graph().await.unwrap();
     let after_signature = signature(&after);
     assert_eq!(

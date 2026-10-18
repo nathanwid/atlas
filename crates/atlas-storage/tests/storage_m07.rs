@@ -4,7 +4,8 @@
 //! tempdir.
 
 use atlas_embedding::Embedder;
-use atlas_storage::{ChunkRecord, Store, doc_id_for, learn, search};
+use atlas_storage::Backend;
+use atlas_storage::{ChunkRecord, SqliteStore, doc_id_for, learn, search};
 use atlas_tokenizer::BpeTokenizer;
 use tempfile::TempDir;
 
@@ -37,7 +38,7 @@ fn tokenizer() -> BpeTokenizer {
 
 #[tokio::test]
 async fn open_mem_starts_empty() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let doc = doc_id_for("anything");
     assert!(!store.document_exists(&doc).await.unwrap());
     assert!(
@@ -51,7 +52,7 @@ async fn open_mem_starts_empty() {
 
 #[tokio::test]
 async fn learn_persists_document_chunks_embeddings() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let text = "alpha beta gamma delta epsilon"; // single chunk
     let summary = learn(&store, &tokenizer(), &FakeEmbedder, text)
         .await
@@ -83,7 +84,7 @@ async fn learn_persists_document_chunks_embeddings() {
 
 #[tokio::test]
 async fn duplicate_learn_is_idempotent() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let text = "alpha beta gamma delta epsilon";
     let first = learn(&store, &tokenizer(), &FakeEmbedder, text)
         .await
@@ -108,7 +109,7 @@ async fn duplicate_learn_is_idempotent() {
 
 #[tokio::test]
 async fn persisted_search_returns_the_learned_chunk() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let text = "alpha beta gamma delta epsilon";
     learn(&store, &tokenizer(), &FakeEmbedder, text)
         .await
@@ -129,7 +130,7 @@ async fn persisted_search_returns_the_learned_chunk() {
 
 #[tokio::test]
 async fn graph_roundtrip_preserves_semantics_and_evidence() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let tok = tokenizer();
     // Two docs: first creates a co-occurrence edge, second upgrades it via
     // the explicit rule and adds its own predicate edge.
@@ -189,14 +190,14 @@ async fn durable_store_survives_restart() {
     let text = "alpha beta gamma delta epsilon";
 
     {
-        let store = Store::open_durable(&db_path).await.unwrap();
+        let store = SqliteStore::open_durable(&db_path).await.unwrap();
         learn(&store, &tokenizer(), &FakeEmbedder, text)
             .await
             .unwrap();
         assert!(store.document_exists(&doc_id_for(text)).await.unwrap());
     } // handle dropped: the durable engine must have flushed
 
-    let reopened = Store::open_durable(&db_path).await.unwrap();
+    let reopened = SqliteStore::open_durable(&db_path).await.unwrap();
     assert!(reopened.document_exists(&doc_id_for(text)).await.unwrap());
     let hits = search(&reopened, &FakeEmbedder, text, 5).await.unwrap();
     assert_eq!(hits.len(), 1);
@@ -205,7 +206,7 @@ async fn durable_store_survives_restart() {
 
 #[tokio::test]
 async fn chunk_records_are_recoverable_by_id() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let text = "alpha beta";
     learn(&store, &tokenizer(), &FakeEmbedder, text)
         .await

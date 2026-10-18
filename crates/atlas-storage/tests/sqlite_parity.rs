@@ -1,4 +1,3 @@
-#![cfg(feature = "sqlite-backend")]
 //! Backend parity tests (storage PoC).
 //!
 //! The same pipeline (`learn` / `search` / `hybrid_search`) is run against

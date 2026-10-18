@@ -26,7 +26,6 @@ pub mod brute;
 pub mod hybrid;
 pub mod index;
 pub mod records;
-#[cfg(feature = "sqlite-backend")]
 pub mod sqlite_store;
 pub mod store;
 pub mod workflow;
@@ -40,7 +39,6 @@ pub use records::{
     ChunkRecord, DocumentRecord, EmbeddingRecord, EntityRecord, EvidenceRecord, PredicateRecord,
     RelationshipRecord, doc_id_for, origin_from_str, origin_to_str,
 };
-#[cfg(feature = "sqlite-backend")]
 pub use sqlite_store::SqliteStore;
 pub use store::Store;
 pub use workflow::{LearnSummary, SearchResult, learn, search};

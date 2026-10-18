@@ -6,7 +6,7 @@
 
 use atlas_embedding::Embedder;
 use atlas_qa::{Answer, ask};
-use atlas_storage::{Store, learn};
+use atlas_storage::{SqliteStore, learn};
 use atlas_tokenizer::BpeTokenizer;
 
 pub const DIM: usize = 512;
@@ -64,8 +64,8 @@ pub fn tokenizer() -> BpeTokenizer {
     BpeTokenizer::from_tiktoken_reader(std::io::BufReader::new(f)).expect("ranks parse")
 }
 
-pub async fn learned_store() -> Store {
-    let store = Store::open_mem().await.unwrap();
+pub async fn learned_store() -> SqliteStore {
+    let store = SqliteStore::open_mem().await.unwrap();
     let tok = tokenizer();
     let embedder = WordOverlapEmbedder;
     for doc in docs() {
@@ -76,7 +76,7 @@ pub async fn learned_store() -> Store {
 
 /// Ask and require a non-insufficient answer with at least one cited
 /// sentence from `expected_doc` (by document index).
-pub async fn ask_expect_doc(store: &Store, question: &str, expected_doc: usize) -> Answer {
+pub async fn ask_expect_doc(store: &SqliteStore, question: &str, expected_doc: usize) -> Answer {
     let answer = ask(store, &WordOverlapEmbedder, question).await.unwrap();
     assert!(
         !answer.insufficient,
