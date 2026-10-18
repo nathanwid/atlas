@@ -206,15 +206,16 @@ fn vector_to_blob(vector: &[f32]) -> Vec<u8> {
 }
 
 fn blob_to_vector(blob: &[u8]) -> anyhow::Result<Vec<f32>> {
+    // `ensure!` keeps trailing bytes an error, so the `as_chunks`
+    // remainder is always empty here.
     anyhow::ensure!(
         blob.len().is_multiple_of(4),
         "embedding blob length {} is not a multiple of 4",
         blob.len()
     );
-    Ok(blob
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect())
+    let (chunks, remainder) = blob.as_chunks::<4>();
+    debug_assert!(remainder.is_empty());
+    Ok(chunks.iter().map(|c| f32::from_le_bytes(*c)).collect())
 }
 
 impl Backend for SqliteStore {
