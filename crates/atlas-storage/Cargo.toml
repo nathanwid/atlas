@@ -12,14 +12,8 @@ atlas-tokenizer = { path = "../atlas-tokenizer" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-surrealdb.workspace = true
 tokio.workspace = true
 rusqlite.workspace = true
-
-[features]
-# Vestigial: kept for one commit so the CI feature-steps still resolve;
-# removed together with SurrealDB in the next commit.
-sqlite-backend = []
 
 [dev-dependencies]
 criterion.workspace = true

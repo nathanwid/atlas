@@ -67,9 +67,9 @@ cargo bench -p atlas-graph --bench pagerank
 
 ## Troubleshooting
 
-SurrealDB SDK logging is filtered out by default (its shutdown path emits
-harmless ERROR noise). To see engine-level logs when debugging storage:
+Storage is an embedded SQLite database at `atlas-data/atlas.db` (WAL
+journal, `synchronous=FULL`). Raise CLI log verbosity when debugging:
 
 ```sh
-RUST_LOG=surrealdb=info cargo run -p atlas-cli -- search "tokio"
+cargo run -p atlas-cli -vv -- search "tokio"
 ```

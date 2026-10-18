@@ -1,6 +1,6 @@
 //! Restart recovery for the durable store (hardening Phase 1).
 //!
-//! Ingests the eight hybrid-fixture documents into a durable SurrealKV
+//! Ingests the eight hybrid-fixture documents into a durable SQLite
 //! store, drops the handle, reopens, and verifies (a) hybrid retrieval
 //! still works and (b) the persisted graph is identical to the
 //! pre-restart graph, compared through stable identity: normalized entity
@@ -128,7 +128,7 @@ fn signature(graph: &atlas_graph::KnowledgeGraph) -> GraphSignature {
 #[tokio::test]
 async fn durable_restart_preserves_graph_and_retrieval() {
     let dir = tempfile::TempDir::new().unwrap();
-    let db_path = dir.path().join("surreal");
+    let db_path = dir.path().join("atlas.db");
     let docs = fixture_docs();
     let tok = tokenizer();
     let embedder = WordOverlapEmbedder;

@@ -1,4 +1,4 @@
-//! Durable records stored in SurrealDB.
+//! Durable records stored in SQLite.
 //!
 //! Record identity is deterministic and content-derived where possible, so
 //! re-learning the same text is a no-op:

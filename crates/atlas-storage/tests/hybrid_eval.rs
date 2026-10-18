@@ -280,7 +280,7 @@ async fn modes_match_their_contracts() {
 
     // Persistence integration: same result after reopen from durable store.
     let dir = tempfile::TempDir::new().unwrap();
-    let durable_path = dir.path().join("surreal");
+    let durable_path = dir.path().join("atlas.db");
     {
         let durable = SqliteStore::open_durable(&durable_path).await.unwrap();
         let tok = tokenizer();

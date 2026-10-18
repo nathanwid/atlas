@@ -1,13 +1,16 @@
-//! Storage PoC benchmarks: the same ingestion and workflow-search
-//! measurements as `hardening.rs`, run against three backends:
+//! Storage benchmarks: ingestion throughput and workflow-search latency
+//! for the SQLite backend, in two configurations:
 //!
-//! * `surreal_mem` â€” SurrealDB in-memory engine (the M07/M08 baseline;
-//!   durability I/O excluded by construction).
-//! * `surrealkv_durable` â€” SurrealDB on embedded SurrealKV, fresh
-//!   temporary directory per iteration (durable writes, first time this
-//!   path is measured).
-//! * `sqlite_durable` â€” SQLite (rusqlite bundled) with WAL +
-//!   synchronous=FULL, fresh temporary file per iteration.
+//! * `sqlite_mem` — in-memory SQLite (durability I/O excluded by
+//!   construction; isolates engine + pipeline cost).
+//! * `sqlite_durable` — SQLite (rusqlite bundled) with WAL +
+//!   synchronous=FULL, fresh temporary file per iteration (every `learn`
+//!   commits one transaction and syncs the WAL).
+//!
+//! Historical comparisons against the removed SurrealDB engines (mem and
+//! SurrealKV) live in `docs/BENCHMARKS.md`; SurrealKV's numbers were
+//! produced under its default `Eventual` commit durability and are not
+//! comparable to SQLite's `synchronous=FULL`.
 //!
 //! Fixture generation and store creation happen in setup and are excluded
 //! from timing; each timed iteration operates on a fresh store so
@@ -16,8 +19,7 @@
 //! `hardening.rs` / `docs/BENCHMARKS.md`).
 
 use atlas_embedding::Embedder;
-use atlas_storage::backend::Backend;
-use atlas_storage::{HybridConfig, SearchMode, SqliteStore, Store, hybrid_search, learn, search};
+use atlas_storage::{HybridConfig, SearchMode, SqliteStore, hybrid_search, learn, search};
 use atlas_tokenizer::BpeTokenizer;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -88,196 +90,26 @@ fn unique_doc() -> String {
     words.join(" ")
 }
 
-/// One bench store of each engine kind, dispatching through `Backend` so
-/// the timed bodies are backend-agnostic.
-enum BenchStore {
-    SurrealMem(Store),
-    SurrealKvDurable(Store),
-    SqliteDurable(Box<SqliteStore>),
-    /// In-memory SQLite, for isolating SQLite engine cost from its disk I/O.
-    SqliteMem(Box<SqliteStore>),
-}
-
-impl Backend for BenchStore {
-    async fn upsert_document(&self, doc_id: &str, text: &str) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.upsert_document(doc_id, text).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.upsert_document(doc_id, text).await
-            }
-        }
-    }
-
-    async fn document_exists(&self, doc_id: &str) -> anyhow::Result<bool> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.document_exists(doc_id).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.document_exists(doc_id).await
-            }
-        }
-    }
-
-    async fn upsert_chunk(&self, chunk: &atlas_storage::ChunkRecord) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.upsert_chunk(chunk).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => s.upsert_chunk(chunk).await,
-        }
-    }
-
-    async fn get_chunk(
-        &self,
-        chunk_id: &str,
-    ) -> anyhow::Result<Option<atlas_storage::ChunkRecord>> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.get_chunk(chunk_id).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => s.get_chunk(chunk_id).await,
-        }
-    }
-
-    async fn delete_chunk(&self, chunk_id: &str) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.delete_chunk(chunk_id).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.delete_chunk(chunk_id).await
-            }
-        }
-    }
-
-    async fn upsert_embedding(
-        &self,
-        embedding: &atlas_storage::EmbeddingRecord,
-    ) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.upsert_embedding(embedding).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.upsert_embedding(embedding).await
-            }
-        }
-    }
-
-    async fn load_embeddings(
-        &self,
-        model_id: &str,
-    ) -> anyhow::Result<Vec<atlas_storage::EmbeddingRecord>> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.load_embeddings(model_id).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.load_embeddings(model_id).await
-            }
-        }
-    }
-
-    async fn upsert_entity(&self, entity: &atlas_storage::EntityRecord) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.upsert_entity(entity).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.upsert_entity(entity).await
-            }
-        }
-    }
-
-    async fn upsert_predicate(
-        &self,
-        predicate: &atlas_storage::PredicateRecord,
-    ) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.upsert_predicate(predicate).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.upsert_predicate(predicate).await
-            }
-        }
-    }
-
-    async fn upsert_relationship(
-        &self,
-        rel: &atlas_storage::RelationshipRecord,
-    ) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.upsert_relationship(rel).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.upsert_relationship(rel).await
-            }
-        }
-    }
-
-    async fn load_graph(&self) -> anyhow::Result<atlas_graph::KnowledgeGraph> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => s.load_graph().await,
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => s.load_graph().await,
-        }
-    }
-
-    async fn apply_learn_write(&self, write: &atlas_storage::LearnWrite<'_>) -> anyhow::Result<()> {
-        match self {
-            BenchStore::SurrealMem(s) | BenchStore::SurrealKvDurable(s) => {
-                s.apply_learn_write(write).await
-            }
-            BenchStore::SqliteDurable(s) | BenchStore::SqliteMem(s) => {
-                s.apply_learn_write(write).await
-            }
-        }
-    }
-}
-
-/// Open a fresh store of `engine` in its own temporary directory (kept
-/// alive by the guard) â€” setup cost, never timed.
+/// Open a fresh SQLite store of `engine` in its own temporary location
+/// (kept alive by the guard) — setup cost, never timed.
 fn open_fresh(
     rt: &tokio::runtime::Runtime,
     engine: &str,
-) -> (BenchStore, Option<tempfile::TempDir>) {
+) -> (SqliteStore, Option<tempfile::TempDir>) {
     match engine {
-        "surreal_mem" => (
-            BenchStore::SurrealMem(rt.block_on(Store::open_mem()).unwrap()),
-            None,
-        ),
-        "surrealkv_durable" => {
-            let dir = tempfile::TempDir::new().expect("tempdir");
-            let store = rt
-                .block_on(Store::open_durable(dir.path().join("surreal")))
-                .unwrap();
-            (BenchStore::SurrealKvDurable(store), Some(dir))
-        }
         "sqlite_durable" => {
             let dir = tempfile::TempDir::new().expect("tempdir");
             let store = rt
                 .block_on(SqliteStore::open_durable(dir.path().join("atlas.db")))
                 .unwrap();
-            (BenchStore::SqliteDurable(Box::new(store)), Some(dir))
+            (store, Some(dir))
         }
-        "sqlite_mem" => (
-            BenchStore::SqliteMem(Box::new(rt.block_on(SqliteStore::open_mem()).unwrap())),
-            None,
-        ),
+        "sqlite_mem" => (rt.block_on(SqliteStore::open_mem()).unwrap(), None),
         other => panic!("unknown engine {other}"),
     }
 }
 
-const ENGINES: [&str; 4] = [
-    "surreal_mem",
-    "surrealkv_durable",
-    "sqlite_mem",
-    "sqlite_durable",
-];
+const ENGINES: [&str; 2] = ["sqlite_mem", "sqlite_durable"];
 
 /// Ingestion throughput per engine: fresh store (setup, untimed) + learning
 /// 100 unique documents (timed, includes chunking, fake embedding, graph

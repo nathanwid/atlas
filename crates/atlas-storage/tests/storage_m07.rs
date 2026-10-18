@@ -1,6 +1,6 @@
 //! M07 storage tests: persistence, idempotency, restart, and the durable
 //! learn/search workflows. All offline: `mem` engine + a deterministic fake
-//! embedder. The restart test uses the durable SurrealKV engine in a
+//! embedder. The restart test uses the durable SQLite store in a
 //! tempdir.
 
 use atlas_embedding::Embedder;
@@ -186,7 +186,7 @@ async fn graph_roundtrip_preserves_semantics_and_evidence() {
 #[tokio::test]
 async fn durable_store_survives_restart() {
     let dir = TempDir::new().unwrap();
-    let db_path = dir.path().join("surreal");
+    let db_path = dir.path().join("atlas.db");
     let text = "alpha beta gamma delta epsilon";
 
     {

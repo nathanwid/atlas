@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     /// Maximum log level (`trace`, `debug`, `info`, `warn`, `error`).
     pub log_level: String,
-    /// Directory for durable storage (M07). The SurrealDB database lives at
+    /// Directory for durable storage. The SQLite database lives at
     /// `<data_dir>/surreal`.
     pub data_dir: PathBuf,
 }

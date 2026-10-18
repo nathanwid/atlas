@@ -36,8 +36,7 @@ pub struct LearnSummary {
 
 /// Learn from a piece of text: chunk, embed, extract, persist.
 ///
-/// Generic over the storage [`Backend`], so the SurrealDB `Store` and the
-/// opt-in SQLite backend run the identical pipeline (PoC parity guarantee).
+/// Generic over the storage [`Backend`]; today that is [`SqliteStore`].
 pub async fn learn(
     store: &impl Backend,
     tokenizer: &BpeTokenizer,

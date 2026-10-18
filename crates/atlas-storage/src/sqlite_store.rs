@@ -1,13 +1,12 @@
-//! SQLite backend (storage PoC, opt-in via the `sqlite-backend` feature).
+//! SQLite store: the production backend for Atlas.
 //!
-//! Same method surface and record shapes as the SurrealDB [`Store`], with
-//! seven relational tables: `document`, `chunk`, `embedding`, `entity`,
-//! `predicate`, `relationship`, and `evidence` (normalized out of the
-//! relationship record so a relationship's evidence set is replaceable as
-//! a unit). The SurrealDB tables are schemaless, but the record structs are
-//! the schema; here `document`/`chunk`/`entity`/`predicate` rows carry the
-//! full record as JSON, `embedding` and `relationship`/`evidence` use
-//! explicit columns for the fields other queries touch.
+//! Seven relational tables mirror the record shapes: `document`, `chunk`,
+//! `embedding`, `entity`, `predicate`, `relationship`, and `evidence`
+//! (normalized out of the relationship record so a relationship's evidence
+//! set is replaceable as a unit). The record structs are the schema; here
+//! `document`/`chunk`/`entity`/`predicate` rows carry the full record as
+//! JSON, `embedding` and `relationship`/`evidence` use explicit columns
+//! for the fields other queries touch.
 //!
 //! Durability configuration (per SQLite's documented WAL contract):
 //! `journal_mode=WAL` (persistent per database file) plus
@@ -19,11 +18,10 @@
 //! Concurrency: rusqlite's `Connection` is `Send` but not `Sync`, so it
 //! lives behind a `Mutex`. All SQLite calls are synchronous and short; no
 //! await happens while the lock is held. `spawn_blocking` is deliberately
-//! absent until the PoC benches show blocking to matter.
+//! absent until benches show blocking to matter.
 //!
 //! Read ordering: `load_embeddings`/`load_graph` read rows in insertion
-//! (rowid) order and sort in Rust exactly like the SurrealDB backend does,
-//! so tie-breaking behavior matches across backends.
+//! (rowid) order and sort in Rust by ordinal.
 
 use crate::backend::Backend;
 use crate::records::{
@@ -76,7 +74,7 @@ impl SqliteStore {
         Self::init(conn, false)
     }
 
-    /// Durable store at `path`. The SurrealDB `Store::open_durable` takes a
+    /// Durable store at `path`. SurrealDB's old `Store::open_durable` took
     /// directory; to keep call sites compatible, a directory argument gets
     /// an `atlas.db` file inside it, and a file argument is used as-is.
     pub async fn open_durable(path: impl AsRef<Path>) -> anyhow::Result<Self> {
