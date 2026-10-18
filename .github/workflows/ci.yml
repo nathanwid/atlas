@@ -15,3 +15,18 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # Storage PoC: SQLite backend (opt-in feature) — parity, crash
+      # recovery, and the bundled-SQLite version guard.
+      - run: cargo clippy -p atlas-storage --all-targets --features sqlite-backend -- -D warnings
+      - run: cargo test -p atlas-storage --features sqlite-backend
+
+  gates-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo clippy -p atlas-storage --all-targets --features sqlite-backend -- -D warnings
+      - run: cargo test -p atlas-storage --features sqlite-backend

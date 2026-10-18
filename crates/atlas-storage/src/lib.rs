@@ -1,7 +1,8 @@
 //! Durable storage for Atlas (M07).
 //!
 //! [`store::Store`] wraps an embedded SurrealDB (in-memory for tests,
-//! RocksDB at `<data_dir>/surreal` for durability). [`crate::records`]
+//! SurrealKV at `<data_dir>/surreal` for durability; RocksDB was rejected
+//! because its C++ build needs libclang). [`crate::records`]
 //! define the deterministic record identities; [`workflow::learn`] and
 //! [`workflow::search`] are the durable flows:
 //!
@@ -20,13 +21,18 @@
 //! the `embedding` table is model-keyed, so learned vectors can join it
 //! later without schema changes.
 
+pub mod backend;
 pub mod brute;
 pub mod hybrid;
 pub mod index;
 pub mod records;
+#[cfg(feature = "sqlite-backend")]
+pub mod sqlite_store;
 pub mod store;
 pub mod workflow;
 
+pub use backend::Backend;
+pub use backend::LearnWrite;
 pub use brute::BruteForceIndex;
 pub use hybrid::{HybridConfig, HybridResult, ResultSource, SearchMode, hybrid_search};
 pub use index::{SearchHit, VectorIndex};
@@ -34,5 +40,7 @@ pub use records::{
     ChunkRecord, DocumentRecord, EmbeddingRecord, EntityRecord, EvidenceRecord, PredicateRecord,
     RelationshipRecord, doc_id_for, origin_from_str, origin_to_str,
 };
+#[cfg(feature = "sqlite-backend")]
+pub use sqlite_store::SqliteStore;
 pub use store::Store;
 pub use workflow::{LearnSummary, SearchResult, learn, search};

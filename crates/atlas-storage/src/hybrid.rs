@@ -21,7 +21,7 @@
 //! Determinism: entity collection follows relationship insertion order,
 //! PPR ties break by entity ID, chunk ties break by chunk ID.
 
-use crate::store::Store;
+use crate::backend::Backend;
 use crate::workflow;
 use atlas_embedding::Embedder;
 use atlas_graph::{KnowledgeGraph, personalized_pagerank};
@@ -157,7 +157,7 @@ fn entities_for_chunks<'a>(
 /// skipped during expansion; cycles are handled by the visited set; the
 /// result of one mode never depends on map iteration order.
 pub async fn hybrid_search(
-    store: &Store,
+    store: &impl Backend,
     embedder: &dyn Embedder,
     query: &str,
     k: usize,
