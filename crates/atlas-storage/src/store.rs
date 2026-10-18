@@ -9,8 +9,7 @@
 //! Atlas's current scale.
 
 use crate::records::{
-    ChunkRecord, DocumentRecord, EmbeddingRecord, EntityRecord, EvidenceRecord, PredicateRecord,
-    RelationshipRecord,
+    ChunkRecord, DocumentRecord, EmbeddingRecord, EntityRecord, PredicateRecord, RelationshipRecord,
 };
 use atlas_graph::{Evidence, KnowledgeGraph};
 use std::path::Path;
@@ -125,58 +124,6 @@ impl Store {
         Ok(())
     }
 
-    /// Persist a whole graph: entities, predicates, relationships — all as
-    /// idempotent upserts keyed by normalized identity.
-    pub async fn persist_graph(&self, graph: &KnowledgeGraph) -> anyhow::Result<()> {
-        for (ordinal, (id, entity)) in graph.entities().enumerate() {
-            let _ = id;
-            self.upsert_entity(&EntityRecord {
-                // The normalized key is the identity; the display form
-                // normalizes back to it.
-                key: atlas_graph::normalize(&entity.display),
-                display: entity.display.clone(),
-                kind: entity.kind.clone(),
-                ordinal: ordinal as u32,
-            })
-            .await?;
-        }
-        for (ordinal, (id, key)) in graph.predicates().enumerate() {
-            let _ = id;
-            self.upsert_predicate(&PredicateRecord {
-                key: key.to_string(),
-                ordinal: ordinal as u32,
-            })
-            .await?;
-        }
-        for (ordinal, (id, rel)) in graph.relationships().enumerate() {
-            let _ = id;
-            self.upsert_relationship(&RelationshipRecord {
-                src: graph.entity_key(rel.src).ok_or_else(|| {
-                    anyhow::anyhow!("relationship references unknown source entity")
-                })?,
-                predicate: graph
-                    .predicate(rel.predicate)
-                    .unwrap_or_default()
-                    .to_string(),
-                dst: graph.entity_key(rel.dst).ok_or_else(|| {
-                    anyhow::anyhow!("relationship references unknown destination entity")
-                })?,
-                origin: crate::records::origin_to_str(rel.origin).to_string(),
-                evidence: rel
-                    .evidence
-                    .iter()
-                    .map(|e: &Evidence| EvidenceRecord {
-                        doc_id: e.doc_id.clone(),
-                        sentence: e.sentence.clone(),
-                    })
-                    .collect(),
-                ordinal: ordinal as u32,
-            })
-            .await?;
-        }
-        Ok(())
-    }
-
     /// Rebuild a graph from persisted rows, in insertion order. The public
     /// graph builders enforce M06's dedup/upgrade/evidence rules during
     /// reconstruction, so the rebuilt graph matches the persisted one.
@@ -227,5 +174,56 @@ impl Store {
             }
         }
         Ok(graph)
+    }
+}
+
+/// The SurrealDB store as a workflow [`Backend`]: every trait method
+/// delegates to the identical inherent method (inherent methods win in
+/// method resolution, so the bodies below call the ones defined above).
+/// `persist_graph` is inherited from the trait default, expressed through
+/// the upsert primitives.
+impl crate::backend::Backend for Store {
+    async fn upsert_document(&self, doc_id: &str, text: &str) -> anyhow::Result<()> {
+        Store::upsert_document(self, doc_id, text).await
+    }
+
+    async fn document_exists(&self, doc_id: &str) -> anyhow::Result<bool> {
+        Store::document_exists(self, doc_id).await
+    }
+
+    async fn upsert_chunk(&self, chunk: &ChunkRecord) -> anyhow::Result<()> {
+        Store::upsert_chunk(self, chunk).await
+    }
+
+    async fn get_chunk(&self, chunk_id: &str) -> anyhow::Result<Option<ChunkRecord>> {
+        Store::get_chunk(self, chunk_id).await
+    }
+
+    async fn delete_chunk(&self, chunk_id: &str) -> anyhow::Result<()> {
+        Store::delete_chunk(self, chunk_id).await
+    }
+
+    async fn upsert_embedding(&self, embedding: &EmbeddingRecord) -> anyhow::Result<()> {
+        Store::upsert_embedding(self, embedding).await
+    }
+
+    async fn load_embeddings(&self, model_id: &str) -> anyhow::Result<Vec<EmbeddingRecord>> {
+        Store::load_embeddings(self, model_id).await
+    }
+
+    async fn upsert_entity(&self, entity: &EntityRecord) -> anyhow::Result<()> {
+        Store::upsert_entity(self, entity).await
+    }
+
+    async fn upsert_predicate(&self, predicate: &PredicateRecord) -> anyhow::Result<()> {
+        Store::upsert_predicate(self, predicate).await
+    }
+
+    async fn upsert_relationship(&self, rel: &RelationshipRecord) -> anyhow::Result<()> {
+        Store::upsert_relationship(self, rel).await
+    }
+
+    async fn load_graph(&self) -> anyhow::Result<KnowledgeGraph> {
+        Store::load_graph(self).await
     }
 }

@@ -27,6 +27,10 @@ tokio = { version = "1", features = ["full"] }
 # kv-mem: in-memory engine for tests; kv-surrealkv: embedded durable engine
 # (pure Rust — RocksDB's C++ build needs libclang, which is not assumed)
 surrealdb = { version = "1", features = ["kv-mem", "kv-surrealkv"] }
+# PoC alternative backend (atlas-storage "sqlite-backend" feature): bundled
+# SQLite 3.53.x, no external toolchain. Default features off: they pull a
+# wasm VFS we never use.
+rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
 
 # Hashing (content-addressed ids)
 sha2 = "0.11"

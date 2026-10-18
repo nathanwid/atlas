@@ -15,8 +15,9 @@
 //! relationship's evidence points at the chunk that produced it — the hook
 //! M08 hybrid retrieval will walk.
 
-use crate::records::{ChunkRecord, EmbeddingRecord, doc_id_for};
-use crate::store::Store;
+use crate::backend::Backend;
+use crate::backend::LearnWrite;
+use crate::records::{ChunkRecord, DocumentRecord, EmbeddingRecord, doc_id_for};
 use atlas_embedding::{Chunker, Embedder};
 use atlas_graph::{Extractor, ExtractorConfig, KnowledgeGraph};
 use atlas_tokenizer::BpeTokenizer;
@@ -34,9 +35,11 @@ pub struct LearnSummary {
 }
 
 /// Learn from a piece of text: chunk, embed, extract, persist.
-/// Learn from a piece of text: chunk, embed, extract, persist.
+///
+/// Generic over the storage [`Backend`], so the SurrealDB `Store` and the
+/// opt-in SQLite backend run the identical pipeline (PoC parity guarantee).
 pub async fn learn(
-    store: &Store,
+    store: &impl Backend,
     tokenizer: &BpeTokenizer,
     embedder: &dyn Embedder,
     text: &str,
@@ -87,43 +90,56 @@ pub async fn learn(
         "embedder returned wrong vector count"
     );
 
-    store.upsert_document(&doc_id, text).await?;
-
     let model_id = embedder.model_id().to_string();
-    for (ordinal, chunk) in chunks.iter().enumerate() {
-        let chunk_id = format!("{doc_id}:{ordinal}");
-        store
-            .upsert_chunk(&ChunkRecord {
-                chunk_id: chunk_id.clone(),
-                doc_id: doc_id.clone(),
-                ordinal: ordinal as u32,
-                text: chunk.text.to_string(),
-            })
-            .await?;
-        store
-            .upsert_embedding(&EmbeddingRecord {
-                chunk_id,
-                model_id: model_id.clone(),
-                vector: vectors[ordinal].clone(),
-            })
-            .await?;
-    }
+    let chunk_records: Vec<ChunkRecord> = chunks
+        .iter()
+        .enumerate()
+        .map(|(ordinal, chunk)| ChunkRecord {
+            chunk_id: format!("{doc_id}:{ordinal}"),
+            doc_id: doc_id.clone(),
+            ordinal: ordinal as u32,
+            text: chunk.text.to_string(),
+        })
+        .collect();
+    let embedding_records: Vec<EmbeddingRecord> = chunk_records
+        .iter()
+        .zip(vectors)
+        .map(|(record, vector)| EmbeddingRecord {
+            chunk_id: record.chunk_id.clone(),
+            model_id: model_id.clone(),
+            vector,
+        })
+        .collect();
 
     // Graph extraction runs per chunk so evidence points at chunks. The
-    // chunk id here is exactly the one persisted above.
+    // chunk id here is exactly the one persisted below.
     let extractor = Extractor::new(ExtractorConfig::default());
     let mut graph = KnowledgeGraph::new();
-    for (ordinal, chunk) in chunks.iter().enumerate() {
-        let chunk_id = format!("{doc_id}:{ordinal}");
-        extractor.extract(&chunk_id, chunk.text, &mut graph);
+    for record in &chunk_records {
+        extractor.extract(&record.chunk_id, &record.text, &mut graph);
     }
-    store.persist_graph(&graph).await?;
+
+    // A single grouped write: transactional backends commit document,
+    // chunks, embeddings, and graph atomically; others fall back to the
+    // sequential primitive writes (same order as before batching).
+    let document = DocumentRecord {
+        doc_id: doc_id.clone(),
+        text: text.to_string(),
+    };
+    store
+        .apply_learn_write(&LearnWrite {
+            document: &document,
+            chunks: &chunk_records,
+            embeddings: &embedding_records,
+            graph: &graph,
+        })
+        .await?;
 
     let summary = LearnSummary {
         doc_id,
         duplicate: false,
         chunks: chunks.len(),
-        embeddings: vectors.len(),
+        embeddings: embedding_records.len(),
         entities: graph.entity_count(),
         relationships: graph.relationship_count(),
     };
@@ -142,7 +158,7 @@ pub struct SearchResult {
 /// Search persisted embeddings: rebuild the exact index from stored
 /// vectors, embed the query, rank, and hydrate chunk text.
 pub async fn search(
-    store: &Store,
+    store: &impl Backend,
     embedder: &dyn Embedder,
     query: &str,
     k: usize,
