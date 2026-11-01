@@ -24,12 +24,8 @@ clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 
 # Storage
-# kv-mem: in-memory engine for tests; kv-surrealkv: embedded durable engine
-# (pure Rust — RocksDB's C++ build needs libclang, which is not assumed)
-surrealdb = { version = "1", features = ["kv-mem", "kv-surrealkv"] }
-# PoC alternative backend (atlas-storage "sqlite-backend" feature): bundled
-# SQLite 3.53.x, no external toolchain. Default features off: they pull a
-# wasm VFS we never use.
+# rusqlite with bundled SQLite: the production store (WAL + synchronous=FULL,
+# per-learn transactions; see crates/atlas-storage/src/sqlite_store.rs)
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
 
 # Hashing (content-addressed ids)

@@ -1,6 +1,6 @@
 //! `atlas learn` — durable learning (M07).
 //!
-//! input → document → chunks → embeddings → graph → SurrealDB.
+//! input → document → chunks → embeddings → graph → SQLite.
 
 use atlas_core::Config;
 
@@ -12,7 +12,7 @@ pub async fn run(config: &Config, text: &str) -> anyhow::Result<()> {
         anyhow::bail!("usage: atlas learn <text> — the text must not be empty");
     }
 
-    let store = atlas_storage::Store::open_durable(config.data_dir.join("surreal")).await?;
+    let store = atlas_storage::SqliteStore::open_durable(config.data_dir.join("atlas.db")).await?;
     let tokenizer = atlas_tokenizer::BpeTokenizer::embedded_cl100k();
     let embedder = atlas_embedding::FastembedEmbedder::bge_small_en_v1_5()?;
 

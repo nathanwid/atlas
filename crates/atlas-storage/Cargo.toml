@@ -12,14 +12,8 @@ atlas-tokenizer = { path = "../atlas-tokenizer" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-surrealdb.workspace = true
 tokio.workspace = true
-rusqlite = { workspace = true, optional = true }
-
-[features]
-# Opt-in SQLite backend (storage PoC). SurrealDB stays the default; nothing
-# outside this crate's tests/benches depends on the feature.
-sqlite-backend = ["dep:rusqlite"]
+rusqlite.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
@@ -33,4 +27,3 @@ harness = false
 [[bench]]
 name = "sqlite_durability"
 harness = false
-required-features = ["sqlite-backend"]

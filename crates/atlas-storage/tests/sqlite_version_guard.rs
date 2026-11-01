@@ -1,4 +1,3 @@
-#![cfg(feature = "sqlite-backend")]
 //! Bundled-SQLite version guard (storage PoC).
 //!
 //! SQLite 3.7.0 through 3.51.2 carried the "WAL-reset bug" (fixed in

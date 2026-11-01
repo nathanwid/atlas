@@ -1,14 +1,13 @@
 //! Backend abstraction over the durable-record primitives.
 //!
-//! [`store::Store`] (embedded SurrealDB) and, under the opt-in
-//! `sqlite-backend` feature, [`sqlite_store::SqliteStore`] both implement
-//! [`Backend`]. The workflow layer (`learn`, `search`, `hybrid_search`) is
-//! generic over it, so the PoC parity tests exercise the exact same
-//! pipeline code against both engines and a future default-backend flip is
-//! a constructor change, not a logic change.
+//! [`sqlite_store::SqliteStore`] implements [`Backend`]. The workflow layer
+//! (`learn`, `search`, `hybrid_search`) is generic over the trait, which
+//! kept the PoC parity tests honest and keeps future backends possible
+//! without touching pipeline code.
 //!
-//! The trait uses native `async fn` (static dispatch only) — no
-//! `async-trait` dependency; Atlas never needs trait objects here.
+//! The trait uses `-> impl Future + Send` signatures (static dispatch
+//! only) — no `async-trait` dependency; Atlas never needs trait objects
+//! here.
 //!
 //! Idempotence contract (must hold for every backend): every write is an
 //! upsert keyed by a deterministic identity, so re-running `learn` on the
@@ -73,12 +72,11 @@ pub trait Backend: Send + Sync {
     /// Persist everything one `learn` call produced.
     ///
     /// The default writes each record through the primitives in the
-    /// historical order — one autocommit per record, exactly the
-    /// pre-batching behavior. Transactional backends override this to
-    /// commit the whole group in a single transaction; the durability
-    /// contract (all-or-nothing per group, or idempotently repairable
-    /// partial state) holds either way because every record is an
-    /// idempotent upsert keyed by a deterministic identity.
+    /// historical order — one autocommit per record. [`SqliteStore`]
+    /// overrides this to commit the whole group in a single transaction;
+    /// the durability contract (all-or-nothing per group, or idempotently
+    /// repairable partial state) holds either way because every record is
+    /// an idempotent upsert keyed by a deterministic identity.
     fn apply_learn_write(
         &self,
         write: &LearnWrite<'_>,

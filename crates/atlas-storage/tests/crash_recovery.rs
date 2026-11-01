@@ -1,4 +1,3 @@
-#![cfg(feature = "sqlite-backend")]
 //! Process-crash recovery for the SQLite backend (storage PoC).
 //!
 //! A child process opens the durable SQLite store, commits exactly one
@@ -22,7 +21,7 @@
 
 use atlas_embedding::Embedder;
 use atlas_storage::backend::Backend;
-use atlas_storage::{SqliteStore, Store, doc_id_for, learn};
+use atlas_storage::{SqliteStore, doc_id_for, learn};
 use atlas_tokenizer::BpeTokenizer;
 use std::time::{Duration, Instant};
 
@@ -70,13 +69,6 @@ fn crash_child_worker() {
                 let store = SqliteStore::open_durable(&db).await.unwrap();
                 // Deterministic crash stage: exactly the document row,
                 // committed durably (synchronous=FULL), nothing else.
-                store
-                    .upsert_document(&doc_id_for(&text), &text)
-                    .await
-                    .unwrap();
-            }
-            "surrealkv" => {
-                let store = Store::open_durable(&db).await.unwrap();
                 store
                     .upsert_document(&doc_id_for(&text), &text)
                     .await
@@ -189,45 +181,6 @@ async fn process_kill_between_document_and_chunks_is_repaired() {
         .await
         .unwrap();
     assert!(again.duplicate);
-}
-
-/// Diagnostic companion (run explicitly:
-/// `cargo test -p atlas-storage --features sqlite-backend -- --ignored --exact surrealkv_kill_recovery`):
-/// the same kill-at-known-stage harness against the SurrealKV durable
-/// engine, answering empirically whether its committed document row
-/// survives an unclean process termination in the vendored 0.1.6 build.
-/// Not part of the default gate because its outcome is a finding, not a
-/// regression assertion.
-#[tokio::test]
-#[ignore = "diagnostic: reports SurrealKV 0.1.6 crash behavior; run explicitly"]
-async fn surrealkv_kill_recovery_diagnostic() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let db = dir.path().join("surreal");
-    let marker = dir.path().join("marker");
-    let text = "alpha beta gamma delta epsilon zeta eta theta";
-    let doc_id = doc_id_for(text);
-
-    spawn_and_kill("surrealkv", &db, &marker, text).unwrap();
-
-    let store = Store::open_durable(&db).await.unwrap();
-    let survived = store.document_exists(&doc_id).await.unwrap();
-    let chunk_there = store
-        .get_chunk(&format!("{doc_id}:0"))
-        .await
-        .unwrap()
-        .is_some();
-    let summary = learn(&store, &tokenizer(), &FakeEmbedder, text)
-        .await
-        .unwrap();
-    eprintln!(
-        "surrealkv diagnostic: document survived kill = {survived}; \
-         unexpected chunk present = {chunk_there}; re-learn duplicate = {}",
-        summary.duplicate
-    );
-    assert!(
-        survived,
-        "committed document row did not survive the kill — durability finding"
-    );
 }
 
 /// Interrupted ingestion, batching edition: the crash child runs a full

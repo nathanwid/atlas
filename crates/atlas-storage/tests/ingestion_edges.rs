@@ -12,7 +12,8 @@
 //!   set is completed by the next learn call.
 
 use atlas_embedding::Embedder;
-use atlas_storage::{ChunkRecord, Store, doc_id_for, learn};
+use atlas_storage::Backend;
+use atlas_storage::{ChunkRecord, SqliteStore, doc_id_for, learn};
 use atlas_tokenizer::BpeTokenizer;
 
 /// Deterministic fake embedder (same shape as the M7 tests): vector =
@@ -41,8 +42,8 @@ fn tokenizer() -> BpeTokenizer {
     BpeTokenizer::from_tiktoken_reader(std::io::BufReader::new(f)).expect("ranks parse")
 }
 
-async fn learned(text: &str) -> (Store, atlas_storage::LearnSummary) {
-    let store = Store::open_mem().await.unwrap();
+async fn learned(text: &str) -> (SqliteStore, atlas_storage::LearnSummary) {
+    let store = SqliteStore::open_mem().await.unwrap();
     let summary = learn(&store, &tokenizer(), &FakeEmbedder, text)
         .await
         .unwrap();
@@ -137,7 +138,7 @@ async fn unicode_heavy_text_roundtrips_through_storage() {
 
 #[tokio::test]
 async fn reingestion_repairs_a_simulated_partial_failure() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let text = "alpha beta gamma delta epsilon zeta eta theta";
     let doc_id = doc_id_for(text);
 
@@ -186,7 +187,7 @@ async fn reingestion_repairs_a_simulated_partial_failure() {
 
 #[tokio::test]
 async fn reingestion_repairs_missing_later_chunks() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     // Long enough to produce several chunks.
     let text = "filler ".repeat(600);
     let doc_id = doc_id_for(&text);

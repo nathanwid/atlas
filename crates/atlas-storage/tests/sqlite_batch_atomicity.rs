@@ -1,4 +1,3 @@
-#![cfg(feature = "sqlite-backend")]
 //! Transaction-batching atomicity for the SQLite backend (storage PoC).
 //!
 //! `learn` persists one document through a single grouped transaction

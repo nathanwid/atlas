@@ -22,11 +22,6 @@ async fn main() -> anyhow::Result<()> {
 
 /// Initialize `tracing` from RUST_LOG, falling back to -v/-vv, falling back
 /// to the configured `log_level`.
-///
-/// Unless RUST_LOG is set explicitly, the SurrealDB SDK's own log targets
-/// are silenced: its shutdown path emits ERROR-level task-cancellation
-/// noise on every process exit, and its engine INFO lines add no value at
-/// CLI level. Explicit RUST_LOG restores full SDK logging.
 fn init_logging(config: &Config, verbose: u8) {
     let filter = match EnvFilter::try_from_default_env() {
         Ok(env_filter) => env_filter,
@@ -36,9 +31,7 @@ fn init_logging(config: &Config, verbose: u8) {
                 1 => "debug",
                 _ => "trace",
             };
-            EnvFilter::new(format!(
-                "{level},surrealdb=off,surrealdb_core=off,surrealkv=off"
-            ))
+            EnvFilter::new(level)
         }
     };
     tracing_subscriber::fmt().with_env_filter(filter).init();

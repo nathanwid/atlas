@@ -7,7 +7,8 @@ mod fixture;
 use std::collections::HashSet;
 
 use atlas_qa::{Confidence, ask};
-use atlas_storage::{Store, doc_id_for};
+use atlas_storage::Backend;
+use atlas_storage::{SqliteStore, doc_id_for};
 use fixture::{ask_expect_doc, docs, learned_store};
 
 #[tokio::test]
@@ -81,7 +82,7 @@ async fn insufficient_evidence_is_explicit() {
     assert!(answer.sentences.is_empty());
     assert_eq!(answer.confidence, Confidence::Low);
 
-    let empty = Store::open_mem().await.unwrap();
+    let empty = SqliteStore::open_mem().await.unwrap();
     let answer = ask(&empty, &fixture::WordOverlapEmbedder, "anything at all")
         .await
         .unwrap();

@@ -4,7 +4,8 @@
 
 use atlas_embedding::Embedder;
 use atlas_qa::ask;
-use atlas_storage::{Store, learn};
+use atlas_storage::Backend;
+use atlas_storage::{SqliteStore, learn};
 use atlas_tokenizer::BpeTokenizer;
 use std::collections::HashSet;
 
@@ -52,7 +53,7 @@ fn tokenizer() -> BpeTokenizer {
 
 #[tokio::test]
 async fn answers_cite_only_recoverable_chunks_after_deletion() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let tok = tokenizer();
     let embedder = WordOverlapEmbedder;
 
@@ -119,7 +120,7 @@ async fn answers_cite_only_recoverable_chunks_after_deletion() {
 
 #[tokio::test]
 async fn deleting_all_evidence_leads_to_insufficient() {
-    let store = Store::open_mem().await.unwrap();
+    let store = SqliteStore::open_mem().await.unwrap();
     let tok = tokenizer();
     let embedder = WordOverlapEmbedder;
 
