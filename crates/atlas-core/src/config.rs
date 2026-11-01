@@ -24,7 +24,7 @@ pub struct Config {
     /// Maximum log level (`trace`, `debug`, `info`, `warn`, `error`).
     pub log_level: String,
     /// Directory for durable storage. The SQLite database lives at
-    /// `<data_dir>/surreal`.
+    /// `<data_dir>/atlas.db`.
     pub data_dir: PathBuf,
 }
 

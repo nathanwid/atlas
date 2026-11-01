@@ -15,7 +15,7 @@ is traceable to a source file listed inline. For milestone history see
 | `atlas-vocab` | token → dense stable IDs, deterministic build, versioned bincode persistence | tokenizer |
 | `atlas-embedding` | chunking, `Embedder` trait + FastEmbed backend, Skip-Gram learning, vector cache | tokenizer, vocab, fastembed |
 | `atlas-graph` | entities, directed relationships with evidence, extraction, BFS, personalized PageRank — **std-only, zero Atlas deps** | — |
-| `atlas-storage` | `VectorIndex`/`BruteForceIndex`, SurrealDB store, learn/search workflows, hybrid retrieval | embedding, graph, tokenizer, surrealdb, sha2 |
+| `atlas-storage` | `VectorIndex`/`BruteForceIndex`, SQLite store (`SqliteStore`), learn/search workflows, hybrid retrieval | embedding, graph, tokenizer, rusqlite, sha2 |
 | `atlas-qa` | extractive question answering with citations and confidence | storage, embedding, graph |
 
 Dependency direction is strictly layered: `graph` and `tokenizer` are
@@ -47,15 +47,17 @@ always produces the same IDs (`atlas-storage/src/records.rs`,
 
 ```
 text → SHA-256 doc_id → Chunker (≤128 tokens, pre-token aligned)
-     → one batched FastEmbed call → document/chunk/embedding upserts
+     → one batched FastEmbed call → document/chunk/embedding/graph records
      → per-chunk graph extraction (evidence doc_id = chunk_id)
-     → graph persistence
+     → one grouped write (Backend::apply_learn_write)
 ```
 
-All writes are idempotent upserts — there are no transactions, by design.
-Duplicate documents (complete chunk set present) short-circuit; partial
-states (document row without all chunks, e.g. after a crash) are repaired
-by the next `learn`.
+All records are idempotent upserts keyed by deterministic IDs. SQLite
+commits everything one `learn` call produced in a **single transaction**
+— all-or-nothing per document. Older partial states (a pre-batching
+database, or rows deleted out from under a document) are still repaired
+by the next `learn`: a document whose complete chunk set is missing is
+re-ingested rather than short-circuited as a duplicate.
 
 ### Search (M07/M08) — `atlas-storage/src/workflow.rs` + `hybrid.rs`
 
@@ -84,19 +86,23 @@ question → hybrid retrieval → sentence split + question-word-overlap scoring
 
 Empty retrieval or zero overlap ⇒ `insufficient` — Atlas never fabricates.
 
-## Durable storage — `atlas-storage/src/store.rs`
+## Durable storage — `atlas-storage/src/sqlite_store.rs`
 
-Embedded SurrealDB 1.5.6 (namespace/db `atlas`): the `mem` engine for
-tests, **SurrealKV** at `<data_dir>/surreal` for durability. SurrealKV is
-pure Rust; RocksDB was rejected because its C++ build requires libclang.
-SurrealKV is gated upstream behind the `surrealdb_unstable` cfg, which is
-set repo-locally in `.cargo/config.toml` — no machine-level RUSTFLAGS.
-The lockfile pins surrealdb 1.5.6, so the "unstable" surface is fixed.
-Tables are schemaless; the record structs in
-`atlas-storage/src/records.rs` define shapes and IDs. Graph persistence
-uses insertion ordinals and rebuilds through the graph's public builders,
-re-firing M06's dedup/upgrade/evidence rules identically (this
-reconstruction path found and fixed the `intern_predicate` bug).
+Embedded SQLite via `rusqlite` (bundled SQLite ≥ 3.51.3, asserted at
+runtime by a version-guard test) at `<data_dir>/atlas.db`: WAL journal,
+`synchronous=FULL`, 5 s busy timeout. Seven relational tables
+(`document`, `chunk`, `embedding`, `entity`, `predicate`,
+`relationship`, `evidence`) mirror the record shapes in
+`atlas-storage/src/records.rs`; `learn` runs as one atomic transaction
+through `Backend::apply_learn_write`. A bundled engine was chosen over
+the previous SurrealDB 1.5.6/SurrealKV stack after the storage
+evaluation measured equal-or-better read latency, specified durability
+semantics, no unstable cfg gates, and a far smaller dependency surface;
+the SurrealKV data directory `atlas-data/surreal/` survives only as a
+forensic artifact. Graph persistence uses insertion ordinals and
+rebuilds through the graph's public builders, re-firing M06's
+dedup/upgrade/evidence rules identically (this reconstruction path
+found and fixed the `intern_predicate` bug).
 
 ## Hybrid retrieval — `atlas-storage/src/hybrid.rs`
 
@@ -124,7 +130,10 @@ detected — they surface as adjacent verbatim quotes.
 
 - Per-query index rebuild (see Search above) — revisit if chunk counts
   reach ~10⁶ (see the analytical memory table in BENCHMARKS.md).
-- No transactions: partial learn states are repaired by re-learning.
+- One durable write transaction per `learn` — durability batching across
+  documents is deliberately not done (it would weaken per-document
+  atomicity); per-transaction fsync cost is visible in durable
+  ingestion benchmarks.
 - Text normalization exists only in consumers (graph entity keys); the
   tokenizer stays lossless.
 - Evaluation fixtures are deliberately small; numbers characterize the
