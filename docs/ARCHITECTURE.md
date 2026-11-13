@@ -9,7 +9,7 @@ is traceable to a source file listed inline. For milestone history see
 
 | crate | responsibility | depends on |
 |---|---|---|
-| `atlas-cli` (`apps/`) | clap CLI: `learn`/`search`/`ask` (live), `similar`/`graph` (placeholders) | core, embedding, qa, storage, tokenizer |
+| `atlas-cli` (`apps/`) | clap CLI: learning, graph neighborhoods, entity-label similarity, search, and QA | core, embedding, qa, storage, tokenizer |
 | `atlas-core` | figment configuration (`Config`), `AtlasError` | figment, serde, thiserror |
 | `atlas-tokenizer` | byte-level BPE: pre-tokenization, ranks parsing, training, encoding (naive + heap engines), decoding | fancy-regex |
 | `atlas-vocab` | token → dense stable IDs, deterministic build, versioned bincode persistence | tokenizer |
@@ -56,8 +56,19 @@ All records are idempotent upserts keyed by deterministic IDs. SQLite
 commits everything one `learn` call produced in a **single transaction**
 — all-or-nothing per document. Older partial states (a pre-batching
 database, or rows deleted out from under a document) are still repaired
-by the next `learn`: a document whose complete chunk set is missing is
-re-ingested rather than short-circuited as a duplicate.
+by the next `learn`: duplicate detection checks expected chunk text,
+requested-model embeddings, and graph records/evidence by key. Missing
+derived records trigger an atomic replay. A second model can index the
+same document.
+
+Each document supplies a graph delta. Within the same write transaction,
+relationship evidence is merged by `(chunk_id, sentence)`, in first-seen
+order. Existing labels, kinds, insertion order, and stronger origins are
+preserved. New graph records append; graph loading restores kinds and
+reads all tables within one SQLite snapshot.
+This prevents further evidence loss; it does not restore evidence deleted
+by older versions. Such recovery requires graph re-extraction from retained
+chunks or corpus replay. Direct relationship upserts still replace evidence.
 
 ### Search (M07/M08) — `atlas-storage/src/workflow.rs` + `hybrid.rs`
 
@@ -111,20 +122,26 @@ from real cosine scores, graph ranks from PPR mass over the undirected
 view of the relationship graph (damping 0.85, dangling mass teleports to
 seeds). Ranks are real, so no fabricated similarity numbers enter the
 ordering. Chunks found by both stages are marked `Both`; every result
-carries per-stage provenance. Expansion is hop-bounded (default 1) and
-cycle-safe; missing chunk records are skipped. Measured behavior is
-two-sided (hybrid recovers graph-only evidence and can also displace
-correct vector hits via tie-breaks) — see the M08 section of
-[ROADMAP.md](ROADMAP.md).
+carries per-stage provenance. Shared candidates receive both rank
+contributions and can change vector order. Graph-only mode excludes vector
+seeds before ranking. Expansion is hop-bounded (default 1) and cycle-safe;
+missing chunk records are skipped; vector search continues to fill live result slots. Fusion can change recall in either
+direction; graph-only recovery in the final top-k is not guaranteed.
 
 ## Extractive QA — `atlas-qa`
 
 Answers quote learned sentences verbatim with citations and confidence;
-the only "generation" is template assembly. Sentence ranking is
-question-word overlap with fixed tie-breaks. Known limitations: overlap
+the only "generation" is template assembly. Sentence ranking uses unique content-word overlap, with punctuation
+separated and a fixed function-word list. Confidence uses the selected
+sentence vector score. Citations retain full chunk IDs. Known
+limitations: lexical overlap
 scoring misses paraphrases; mean pooling (M05) is the only text-embedding
 composition; multi-document evidence is flagged but contradictions are not
 detected — they surface as adjacent verbatim quotes.
+
+Graph lead-ins match complete entity phrases. Each claim cites the first
+live supporting chunk that contains its evidence sentence. Validation
+reuses retrieved text and caches other chunk lookups, including misses.
 
 ## Known limitations
 
@@ -138,3 +155,34 @@ detected — they surface as adjacent verbatim quotes.
   tokenizer stays lossless.
 - Evaluation fixtures are deliberately small; numbers characterize the
   fixtures as much as the system.
+- The transitive `paste` proc macro has advisory RUSTSEC-2024-0436 because it
+  is unmaintained. The advisory reports no vulnerability, but `cargo audit
+  --deny warnings` fails. FastEmbed still depends on Tokenizers 0.23, which
+  uses `paste`; follow up when upstream provides a compatible replacement.
+
+## Input and checkpoint compatibility
+
+The fixed chunk layout remains `{doc_id}:{ordinal}`. FastEmbed validates
+actual model-token counts before embedding, duplicate detection, or cache
+reuse. Counts include special tokens and the BGE query prefix. Oversized
+inputs return an error with instructions to shorten or split the text;
+Atlas does not silently truncate or automatically change stored chunk IDs.
+Grouped learning rejects different text or metadata for an existing chunk ID,
+so older model vectors keep their original meaning. Keep the original
+tokenizer/chunk settings for repair; use a new data directory for a changed
+layout. Low-level chunk upserts retain their explicit replacement contract.
+
+Skip-Gram model format v2 stores ordered-vocabulary and tokenizer
+fingerprints. Inference IDs also include weights and pooling version, so
+old learned vectors/cache entries cannot be reused under new model IDs.
+The vocabulary file format remains v1. Legacy model v1 files cannot prove
+their vocabulary mapping: loading rejects them and saving refuses to replace
+them. Keep those files; retrain from the original corpus into new model and vocabulary
+paths, then re-index with the new model identity. No automatic migration or
+deletion occurs.
+
+Model and vocabulary saves sync a temporary file before atomic replacement.
+Separate saves are not one transaction; fingerprint checks reject mismatched
+pairs. A paired-checkpoint publication API remains optional future work.
+Process-kill tests cover open SQLite connections and unfinished grouped
+transactions, including an evidence merge. They do not simulate power loss.

@@ -52,7 +52,7 @@ impl Answer {
         }
         let mut out = String::new();
         if let Some(lead) = &self.lead_in {
-            out.push_str(lead);
+            out.push_str(&escape_terminal_controls(lead));
             out.push('\n');
         }
         out.push_str("From the learned content:\n");
@@ -60,9 +60,9 @@ impl Answer {
             out.push_str(&format!(
                 "{}. \"{}\" [doc {}, chunk {}]\n",
                 i + 1,
-                sentence.text,
-                &sentence.doc_id[..8.min(sentence.doc_id.len())],
-                &sentence.chunk_id[..8.min(sentence.chunk_id.len())]
+                escape_terminal_controls(&sentence.text),
+                escape_terminal_controls(&sentence.doc_id),
+                escape_terminal_controls(&sentence.chunk_id)
             ));
         }
         let confidence = match self.confidence {
@@ -75,5 +75,48 @@ impl Answer {
             out.push_str(" Evidence spans multiple documents; sentences are quoted verbatim.");
         }
         out
+    }
+}
+
+fn escape_terminal_controls(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch.is_control() {
+            escaped.push_str(&format!("\\u{{{:x}}}", ch as u32));
+        } else {
+            escaped.push(ch);
+        }
+    }
+    escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rendering_does_not_emit_controls_from_learned_evidence() {
+        let answer = Answer {
+            question: "What uses\u{1b}[2J Tokio?".into(),
+            lead_in: Some("Rust -[uses\u{7}]-> Tokio".into()),
+            sentences: vec![AnswerSentence {
+                text: "Rust\u{1b}[31m uses Tokio\u{9b}2J".into(),
+                doc_id: "doc\u{7}".into(),
+                chunk_id: "chunk\u{1b}[K".into(),
+                score: Some(0.9),
+            }],
+            confidence: Confidence::High,
+            insufficient: false,
+            multi_source: false,
+        };
+
+        let rendered = answer.render();
+
+        assert!(rendered.contains("Rust\\u{1b}[31m uses Tokio\\u{9b}2J"));
+        assert!(rendered.contains("Rust -[uses\\u{7}]-> Tokio"));
+        assert!(rendered.contains("doc\\u{7}"));
+        assert!(rendered.contains("chunk\\u{1b}[K"));
+        assert!(rendered.chars().all(|ch| !ch.is_control() || ch == '\n'));
+        assert!(answer.sentences[0].text.contains('\u{1b}'));
     }
 }

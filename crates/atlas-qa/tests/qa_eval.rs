@@ -54,7 +54,16 @@ async fn relationship_questions_get_graph_lead_ins() {
 
 #[tokio::test]
 async fn non_relationship_questions_have_no_lead_in() {
-    let store = learned_store().await;
+    // Keep both documents within the retrieval limit. This test checks
+    // entity matching, independent of fusion's top-k selection.
+    let store = SqliteStore::open_mem().await.unwrap();
+    let tok = fixture::tokenizer();
+    let corpus = docs();
+    for text in [&corpus[0], &corpus[5]] {
+        atlas_storage::learn(&store, &tok, &fixture::WordOverlapEmbedder, text)
+            .await
+            .unwrap();
+    }
     // "learning engine" touches no relationship entity.
     let answer = ask(
         &store,

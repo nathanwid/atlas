@@ -83,7 +83,7 @@ impl Vocab {
             tokens: self.tokens.iter().map(|t| t.to_vec()).collect(),
         };
         let bytes = bincode::serialize(&file).expect("VocabFile is always serializable");
-        std::fs::write(path, bytes)?;
+        crate::persistence::write_atomic(path, &bytes)?;
         Ok(())
     }
 

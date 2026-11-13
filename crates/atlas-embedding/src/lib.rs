@@ -19,7 +19,7 @@ pub mod learn;
 pub use cache::{CacheKey, VectorCache, cache_key};
 pub use chunker::{Chunk, Chunker};
 pub use embedder::{Embedder, FastembedEmbedder};
-pub use learn::{LearnedEmbedder, SkipGramModel, TrainerConfig, train};
+pub use learn::{LearnedEmbedder, SkipGramModel, TrainerConfig, train, try_train};
 
 /// Chunk-cache-embed a batch of chunk texts.
 ///
@@ -32,6 +32,7 @@ pub fn embed_chunks(
     cache: &mut VectorCache,
     texts: &[&str],
 ) -> anyhow::Result<Vec<Vec<f32>>> {
+    embedder.validate_documents(texts)?;
     let keys: Vec<CacheKey> = texts
         .iter()
         .map(|t| cache_key(embedder.model_id(), t))
@@ -55,6 +56,7 @@ pub fn embed_chunks(
             vectors.len(),
             misses.len()
         );
+        validate_vectors(&vectors)?;
         for (i, vector) in misses.into_iter().zip(vectors) {
             cache.insert(keys[i], vector.clone());
             out[i] = Some(vector);
@@ -63,6 +65,24 @@ pub fn embed_chunks(
     }
 
     Ok(out.into_iter().map(Option::unwrap).collect())
+}
+
+/// Check a batch before storing or caching it. Correctly sized zero vectors are valid.
+pub fn validate_vectors(vectors: &[Vec<f32>]) -> anyhow::Result<()> {
+    if let Some(first) = vectors.first() {
+        anyhow::ensure!(!first.is_empty(), "embedding dimension must be positive");
+        for vector in vectors {
+            anyhow::ensure!(
+                vector.len() == first.len(),
+                "embedder returned inconsistent vector dimensions"
+            );
+            anyhow::ensure!(
+                vector.iter().all(|x| x.is_finite()),
+                "embedding contains non-finite values"
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

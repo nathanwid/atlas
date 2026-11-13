@@ -44,11 +44,27 @@ impl BpeTokenizer {
     /// entries, microseconds of work, and it keeps `decode` allocation-free
     /// beyond the output buffer.
     pub fn from_ranks(ranks: Ranks) -> Self {
+        Self::try_from_ranks(ranks).expect("invalid BPE rank table")
+    }
+
+    /// Validate a complete byte-level table. Ranks need not be contiguous.
+    pub fn try_from_ranks(ranks: Ranks) -> Result<Self, std::io::Error> {
+        let invalid = |message| std::io::Error::new(std::io::ErrorKind::InvalidData, message);
+        if ranks.keys().any(|token| token.is_empty()) {
+            return Err(invalid("rank table contains an empty token"));
+        }
+        for byte in 0..=255u8 {
+            if !ranks.contains_key(&[byte][..]) {
+                return Err(invalid("rank table must contain all 256 byte tokens"));
+            }
+        }
         let mut reverse: HashMap<Rank, Box<[u8]>> = HashMap::with_capacity(ranks.len());
         for (token, &rank) in &ranks {
-            reverse.insert(rank, token.clone());
+            if reverse.insert(rank, token.clone()).is_some() {
+                return Err(invalid("rank table contains duplicate numeric ranks"));
+            }
         }
-        BpeTokenizer { ranks, reverse }
+        Ok(BpeTokenizer { ranks, reverse })
     }
 
     /// Load a tokenizer from a tiktoken-format ranks file
@@ -56,9 +72,9 @@ impl BpeTokenizer {
     pub fn from_tiktoken_reader(
         reader: impl std::io::Read,
     ) -> Result<Self, crate::ranks::RanksError> {
-        Ok(Self::from_ranks(crate::ranks::parse_tiktoken_ranks(
+        Ok(Self::try_from_ranks(crate::ranks::parse_tiktoken_ranks(
             reader,
-        )?))
+        )?)?)
     }
 
     /// Load the embedded cl100k tokenizer. Available with the
@@ -70,6 +86,13 @@ impl BpeTokenizer {
         let ranks = crate::ranks::parse_tiktoken_ranks(RANKS.as_bytes())
             .expect("embedded cl100k ranks must parse");
         Self::from_ranks(ranks)
+    }
+
+    /// Read-only merge entries. Callers must sort them for stable identities.
+    pub fn rank_entries(&self) -> impl Iterator<Item = (&[u8], Rank)> {
+        self.ranks
+            .iter()
+            .map(|(bytes, &rank)| (bytes.as_ref(), rank))
     }
 
     pub fn encode(&self, text: &str) -> Vec<Rank> {

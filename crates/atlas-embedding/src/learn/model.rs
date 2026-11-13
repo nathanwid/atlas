@@ -3,6 +3,7 @@
 
 use crate::learn::trainer::TrainerConfig;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// Errors from loading a trained model.
@@ -30,6 +31,8 @@ pub struct SkipGramModel {
     dim: usize,
     w_in: Vec<f32>,
     w_out: Vec<f32>,
+    vocab_hash: [u8; 32],
+    tokenizer_hash: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -39,9 +42,11 @@ struct SkipGramFile {
     vocab_len: u32,
     w_in: Vec<f32>,
     w_out: Vec<f32>,
+    vocab_hash: [u8; 32],
+    tokenizer_hash: [u8; 32],
 }
 
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 
 impl SkipGramModel {
     /// An uninitialized model with `dim`-sized rows and no vocabulary rows
@@ -51,6 +56,8 @@ impl SkipGramModel {
             dim,
             w_in: Vec::new(),
             w_out: Vec::new(),
+            vocab_hash: [0; 32],
+            tokenizer_hash: [0; 32],
         }
     }
 
@@ -116,23 +123,44 @@ impl SkipGramModel {
 
     /// Write the model to `path` in the versioned bincode format.
     pub fn save(&self, path: &Path) -> Result<(), LearnerError> {
+        // Legacy mappings cannot be verified. Preserve the file and require
+        // an explicit new destination for a rebuilt model.
+        match std::fs::File::open(path) {
+            Ok(mut previous) => {
+                use std::io::Read;
+                let mut version = [0; 4];
+                previous.read_exact(&mut version)?;
+                if u32::from_le_bytes(version) != FORMAT_VERSION {
+                    return Err(LearnerError::Format(
+                        "refusing to replace a legacy model; save the rebuilt model to a new path"
+                            .into(),
+                    ));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
         let file = SkipGramFile {
             version: FORMAT_VERSION,
             dim: self.dim as u32,
             vocab_len: self.vocab_len() as u32,
             w_in: self.w_in.clone(),
             w_out: self.w_out.clone(),
+            vocab_hash: self.vocab_hash,
+            tokenizer_hash: self.tokenizer_hash,
         };
         let bytes = bincode::serialize(&file).expect("SkipGramFile is always serializable");
-        std::fs::write(path, bytes)?;
+        atlas_vocab::persistence::write_atomic(path, &bytes)?;
         Ok(())
     }
 
-    /// Load a model and check it against `vocab`: row count must equal the
-    /// vocabulary length, or the IDs this model was trained on are not the
-    /// IDs the caller would use.
+    /// Load format v2 and verify the ordered vocabulary fingerprint.
+    /// Legacy files remain untouched and require retraining to a new path.
     pub fn load(path: &Path, vocab: &atlas_vocab::Vocab) -> Result<Self, LearnerError> {
         let bytes = std::fs::read(path)?;
+        if bytes.get(..4) != Some(FORMAT_VERSION.to_le_bytes().as_slice()) {
+            return Err(LearnerError::Format("legacy or invalid model format; keep the original file and retrain to a new path (vocabulary mapping cannot be verified)".into()));
+        }
         let file: SkipGramFile =
             bincode::deserialize(&bytes).map_err(|e| LearnerError::Format(e.to_string()))?;
         if file.version != FORMAT_VERSION {
@@ -148,6 +176,11 @@ impl SkipGramModel {
                 vocab.len()
             )));
         }
+        if file.vocab_hash != vocab_fingerprint(vocab) {
+            return Err(LearnerError::Format(
+                "ordered vocabulary does not match the model".into(),
+            ));
+        }
         let dim = file.dim as usize;
         if dim == 0
             || file.w_in.len() != dim * file.vocab_len as usize
@@ -157,11 +190,66 @@ impl SkipGramModel {
                 "matrix sizes do not match dim and vocab_len".to_string(),
             ));
         }
+        if file.w_in.iter().chain(&file.w_out).any(|x| !x.is_finite()) {
+            return Err(LearnerError::Format(
+                "model contains non-finite weights".into(),
+            ));
+        }
         Ok(SkipGramModel {
             dim,
             w_in: file.w_in,
             w_out: file.w_out,
+            vocab_hash: file.vocab_hash,
+            tokenizer_hash: file.tokenizer_hash,
         })
+    }
+
+    pub(crate) fn bind(
+        &mut self,
+        vocab: &atlas_vocab::Vocab,
+        tokenizer: &atlas_tokenizer::BpeTokenizer,
+    ) {
+        self.vocab_hash = vocab_fingerprint(vocab);
+        self.tokenizer_hash = tokenizer_fingerprint(tokenizer);
+    }
+
+    pub(crate) fn check_binding(
+        &self,
+        vocab: &atlas_vocab::Vocab,
+        tokenizer: &atlas_tokenizer::BpeTokenizer,
+    ) -> Result<(), LearnerError> {
+        if self.vocab_len() != vocab.len() {
+            return Err(LearnerError::Format(format!(
+                "model has {} rows but vocabulary has {} entries",
+                self.vocab_len(),
+                vocab.len()
+            )));
+        }
+        if self.vocab_hash != vocab_fingerprint(vocab)
+            || self.tokenizer_hash != tokenizer_fingerprint(tokenizer)
+        {
+            return Err(LearnerError::Format(
+                "model vocabulary or tokenizer fingerprint does not match".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn inference_id(&self) -> String {
+        let mut hash = Sha256::new();
+        hash.update(b"atlas-skipgram-mean-v1");
+        hash.update((self.dim as u64).to_le_bytes());
+        hash.update(self.vocab_hash);
+        hash.update(self.tokenizer_hash);
+        for weight in &self.w_in {
+            hash.update(weight.to_le_bytes());
+        }
+        let suffix: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        format!(
+            "atlas-skipgram-d{}-v{}-{suffix}",
+            self.dim,
+            self.vocab_len()
+        )
     }
 
     /// Access to context vectors for training only.
@@ -181,6 +269,28 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+fn vocab_fingerprint(vocab: &atlas_vocab::Vocab) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    for id in 0..vocab.len() as u32 {
+        let token = vocab.token(id).unwrap();
+        hash.update((token.len() as u64).to_le_bytes());
+        hash.update(token);
+    }
+    hash.finalize().into()
+}
+fn tokenizer_fingerprint(tokenizer: &atlas_tokenizer::BpeTokenizer) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(atlas_tokenizer::pretokenize::CL100K_PATTERN.as_bytes());
+    let mut entries: Vec<_> = tokenizer.rank_entries().collect();
+    entries.sort_by_key(|(_, rank)| *rank);
+    for (bytes, rank) in entries {
+        hash.update(rank.to_le_bytes());
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    }
+    hash.finalize().into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +300,8 @@ mod tests {
         SkipGramModel {
             dim,
             w_in: vectors.into_iter().flatten().collect(),
+            vocab_hash: [0; 32],
+            tokenizer_hash: [0; 32],
             w_out: vec![0.0; 0], // read API only touches w_in
         }
     }
@@ -224,5 +336,28 @@ mod tests {
     fn zero_vector_scores_zero_not_nan() {
         let m = model_with(vec![vec![1.0, 0.0], vec![0.0, 0.0]]);
         assert_eq!(m.similarity(0, 1).unwrap(), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+    #[test]
+    fn non_finite_model_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad");
+        let mut vocab = atlas_vocab::Vocab::default();
+        vocab.get_or_insert(b"a");
+        let file = SkipGramFile {
+            version: FORMAT_VERSION,
+            dim: 1,
+            vocab_len: 1,
+            vocab_hash: vocab_fingerprint(&vocab),
+            tokenizer_hash: [0; 32],
+            w_in: vec![f32::NAN],
+            w_out: vec![0.0],
+        };
+        std::fs::write(&path, bincode::serialize(&file).unwrap()).unwrap();
+        assert!(SkipGramModel::load(&path, &vocab).is_err());
     }
 }

@@ -42,14 +42,12 @@ pub async fn ask(
     )
     .await?;
 
-    let question_words: Vec<String> = question.split_whitespace().map(normalize).collect();
+    let question_words = content_words(question);
     let mut scored: Vec<(usize, Option<f32>, AnswerSentence)> = Vec::new();
     for hit in &hits {
         for sentence in atlas_graph::extract::sentences(&hit.text) {
-            let overlap = sentence
-                .split_whitespace()
-                .map(normalize)
-                .filter(|w| question_words.contains(w))
+            let overlap = content_words(&sentence)
+                .intersection(&question_words)
                 .count();
             if overlap == 0 {
                 continue; // not on-topic; quoting it would be noise
@@ -74,7 +72,10 @@ pub async fn ask(
     scored.truncate(MAX_SENTENCES);
 
     let best_overlap = scored.first().map(|(overlap, _, _)| *overlap).unwrap_or(0);
-    let best_score = hits.first().and_then(|h| h.score).unwrap_or(0.0);
+    let best_score = scored
+        .first()
+        .and_then(|(_, score, _)| *score)
+        .unwrap_or(0.0);
     let insufficient = scored.is_empty();
 
     let confidence = if insufficient {
@@ -93,7 +94,7 @@ pub async fn ask(
         docs.len() > 1
     };
 
-    let lead_in = graph_lead_in(store, question).await?;
+    let lead_in = graph_lead_in(store, question, &hits).await?;
 
     Ok(Answer {
         question: question.to_string(),
@@ -106,22 +107,56 @@ pub async fn ask(
 }
 
 /// Relationship-shaped questions get a lead-in from the knowledge graph:
-/// every relationship whose source or destination entity appears in the
-/// question produces one line, in graph insertion order (deterministic),
-/// capped at [`MAX_LEAD_INS`].
-async fn graph_lead_in(store: &SqliteStore, question: &str) -> anyhow::Result<Option<String>> {
+/// matching relationships need at least one live supporting chunk. Select
+/// the first valid source in evidence order and cite it. Relationship order
+/// is deterministic and the output is capped at [`MAX_LEAD_INS`].
+async fn graph_lead_in(
+    store: &SqliteStore,
+    question: &str,
+    hits: &[atlas_storage::HybridResult],
+) -> anyhow::Result<Option<String>> {
     let graph = store.load_graph().await?;
     if graph.relationship_count() == 0 {
         return Ok(None);
     }
     let question_key = normalize(question);
+    // Reuse retrieved text. Cache additional lookups, including missing
+    // chunks, because several relationships can share an evidence source.
+    let mut chunks: std::collections::HashMap<String, Option<(String, String)>> = hits
+        .iter()
+        .map(|hit| {
+            (
+                hit.chunk_id.clone(),
+                Some((hit.doc_id.clone(), hit.text.clone())),
+            )
+        })
+        .collect();
     let mut lines = Vec::new();
     for (_, rel) in graph.relationships() {
         let src = graph.entity_key(rel.src).unwrap_or_default();
         let dst = graph.entity_key(rel.dst).unwrap_or_default();
-        if question_key.contains(&src) || question_key.contains(&dst) {
+        if !(mentions_entity(&question_key, &src) || mentions_entity(&question_key, &dst)) {
+            continue;
+        }
+        for ev in &rel.evidence {
+            if ev.sentence.trim().is_empty() {
+                continue;
+            }
+            let chunk = match chunks.entry(ev.doc_id.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let chunk = store.get_chunk(&ev.doc_id).await?;
+                    entry.insert(chunk.map(|chunk| (chunk.doc_id, chunk.text)))
+                }
+            };
+            let Some((doc_id, text)) = chunk else {
+                continue;
+            };
+            if !text.contains(&ev.sentence) {
+                continue;
+            }
             lines.push(format!(
-                "{} -[{}]-> {}.",
+                "{} -[{}]-> {}. [doc {}, chunk {}]",
                 graph
                     .entity(rel.src)
                     .map(|e| e.display.as_str())
@@ -131,7 +166,10 @@ async fn graph_lead_in(store: &SqliteStore, question: &str) -> anyhow::Result<Op
                     .entity(rel.dst)
                     .map(|e| e.display.as_str())
                     .unwrap_or("?"),
+                doc_id,
+                ev.doc_id,
             ));
+            break;
         }
         if lines.len() >= MAX_LEAD_INS {
             break;
@@ -142,4 +180,33 @@ async fn graph_lead_in(store: &SqliteStore, question: &str) -> anyhow::Result<Op
     } else {
         Some(format!("From the knowledge graph: {}", lines.join(" ")))
     })
+}
+
+/// Inputs use graph normalization. Check the boundaries of the complete
+/// entity phrase so, for example, Go does not match Cargo.
+fn mentions_entity(question: &str, entity: &str) -> bool {
+    !entity.is_empty()
+        && question.match_indices(entity).any(|(start, _)| {
+            let end = start + entity.len();
+            let is_word = |c: char| c.is_alphanumeric() || c == '_';
+            question[..start]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !is_word(c))
+                && question[end..].chars().next().is_none_or(|c| !is_word(c))
+        })
+}
+
+/// QA normalization is separate from lossless tokenization and graph identity.
+fn content_words(text: &str) -> std::collections::BTreeSet<String> {
+    const FUNCTION_WORDS: &[&str] = &[
+        "a", "an", "the", "is", "are", "was", "were", "be", "been", "what", "which", "who", "when",
+        "where", "why", "how", "do", "does", "did", "of", "to", "in", "on", "at", "for", "from",
+        "with", "by", "and", "or", "it", "this", "that", "has", "have",
+    ];
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .filter(|w| !FUNCTION_WORDS.contains(&w.as_str()))
+        .collect()
 }

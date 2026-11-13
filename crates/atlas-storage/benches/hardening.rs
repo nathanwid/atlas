@@ -70,10 +70,11 @@ const VOCAB: [&str; 16] = [
 ];
 
 fn unique_doc() -> String {
-    let mut state = DOC_COUNTER
-        .fetch_add(1, Ordering::Relaxed)
-        .wrapping_mul(0x9E3779B97F4A7C15)
-        | 1;
+    doc_for_seed(DOC_COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+fn doc_for_seed(seed: u64) -> String {
+    let mut state = seed.wrapping_mul(0x9E3779B97F4A7C15) | 1;
     let mut words = Vec::with_capacity(DOC_WORDS);
     for _ in 0..DOC_WORDS {
         state ^= state << 13;
@@ -82,6 +83,10 @@ fn unique_doc() -> String {
         words.push(VOCAB[(state % VOCAB.len() as u64) as usize]);
     }
     words.join(" ")
+}
+
+fn search_doc(seed: u64) -> String {
+    doc_for_seed(seed)
 }
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -134,14 +139,20 @@ fn bench_search(c: &mut Criterion) {
     let rt = runtime();
     let tok = tokenizer();
     let embedder = FakeEmbedder;
+    assert_eq!(
+        search_doc(0),
+        search_doc(0),
+        "search fixtures must not depend on the ingestion counter"
+    );
 
     let mut group = c.benchmark_group("search");
     group.sample_size(20);
+    let mut fixture_seed = 0u64;
     for n in [100usize, 1000] {
         // Setup (untimed): learn N one-chunk documents, snapshot vectors.
         let store = rt.block_on(async { SqliteStore::open_mem().await.unwrap() });
-        for _ in 0..n {
-            let doc = unique_doc();
+        for i in 0..n {
+            let doc = search_doc(fixture_seed + i as u64);
             rt.block_on(async { learn(&store, &tok, &embedder, &doc).await.unwrap() });
         }
         let embeddings = rt.block_on(async { store.load_embeddings(MODEL).await.unwrap() });
@@ -183,14 +194,54 @@ fn bench_search(c: &mut Criterion) {
                 })
             })
         });
+        // Separate connected fixture. Vector-only groups keep the original
+        // Greek-word generator; only full hybrid timing uses graph facts.
+        let graph_store = rt.block_on(SqliteStore::open_mem()).unwrap();
+        for i in 0..n {
+            let doc = format!(
+                "here Entity{i} uses Entity{}. {}",
+                (i + 1) % n,
+                search_doc(fixture_seed + n as u64 + i as u64)
+            );
+            rt.block_on(learn(&graph_store, &tok, &embedder, &doc))
+                .unwrap();
+        }
+        assert_eq!(
+            rt.block_on(graph_store.load_embeddings(MODEL))
+                .unwrap()
+                .len(),
+            n,
+            "one graph chunk per document"
+        );
+        let graph = rt.block_on(graph_store.load_graph()).unwrap();
+        assert!(
+            graph.relationship_count() >= n,
+            "full hybrid benchmark must traverse a connected graph"
+        );
+        let probe = rt
+            .block_on(hybrid_search(
+                &graph_store,
+                &embedder,
+                "Entity0 uses Entity1",
+                5,
+                &HybridConfig::default(),
+                SearchMode::Hybrid,
+            ))
+            .unwrap();
+        assert!(
+            probe
+                .iter()
+                .any(|hit| hit.source != atlas_storage::ResultSource::Vector),
+            "full hybrid results must contain graph provenance (Both is valid)"
+        );
         group.bench_function(format!("hybrid_search_full/{n}_chunks"), |b| {
             b.iter(|| {
                 rt.block_on(async {
                     // Full M08 path: workflow_search + graph load + PPR + RRF.
                     hybrid_search(
-                        &store,
+                        &graph_store,
                         &embedder,
-                        "alpha beta gamma",
+                        "Entity0 uses Entity1",
                         5,
                         &HybridConfig::default(),
                         SearchMode::Hybrid,
@@ -200,6 +251,7 @@ fn bench_search(c: &mut Criterion) {
                 })
             })
         });
+        fixture_seed += 2 * n as u64;
     }
     group.finish();
 }

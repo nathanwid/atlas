@@ -154,6 +154,17 @@ pub fn train(
     corpus: &str,
     config: &TrainerConfig,
 ) -> SkipGramModel {
+    try_train(vocab, tokenizer, corpus, config).expect("invalid training configuration")
+}
+
+/// Fallible training entry point. Validation precedes vocabulary mutation.
+pub fn try_train(
+    vocab: &mut Vocab,
+    tokenizer: &BpeTokenizer,
+    corpus: &str,
+    config: &TrainerConfig,
+) -> Result<SkipGramModel, LearnerError> {
+    validate_config(config)?;
     let ids = text_to_ids(tokenizer, vocab, corpus);
     let mut model = SkipGramModel::empty(config.dim);
     model.grow_to(vocab.len(), config);
@@ -163,8 +174,22 @@ pub fn train(
         token_counts(vocab.len(), &ids),
         config,
         config.lr,
+        true,
     );
-    model
+    model.bind(vocab, tokenizer);
+    Ok(model)
+}
+
+fn validate_config(config: &TrainerConfig) -> Result<(), LearnerError> {
+    if config.dim == 0
+        || config.window == 0
+        || config.epochs == 0
+        || !config.lr.is_finite()
+        || config.lr <= 0.0
+    {
+        return Err(LearnerError::Format("training requires positive dimensions, window, epochs, and a finite positive learning rate".into()));
+    }
+    Ok(())
 }
 
 impl SkipGramModel {
@@ -181,6 +206,7 @@ impl SkipGramModel {
         text: &str,
         config: &TrainerConfig,
     ) -> Result<(), LearnerError> {
+        validate_config(config)?;
         if config.dim != self.dim() {
             return Err(LearnerError::Format(format!(
                 "config dim {} does not match trained model dim {}",
@@ -188,6 +214,7 @@ impl SkipGramModel {
                 self.dim()
             )));
         }
+        self.check_binding(vocab, tokenizer)?;
         let ids = text_to_ids(tokenizer, vocab, text);
         let new_len = vocab.len();
         self.grow_to(new_len, config);
@@ -195,7 +222,8 @@ impl SkipGramModel {
         // weight and are never drawn as negatives for this update.
         let counts = token_counts(new_len, &ids);
         let floor_lr = config.lr * 0.1;
-        train_on_stream(self, &ids, counts, config, floor_lr);
+        train_on_stream(self, &ids, counts, config, floor_lr, false);
+        self.bind(vocab, tokenizer);
         Ok(())
     }
 }
@@ -214,7 +242,8 @@ fn train_on_stream(
     ids: &[u32],
     counts: Vec<u64>,
     config: &TrainerConfig,
-    lr_start: f32,
+    lr: f32,
+    decay_lr: bool,
 ) {
     let all_pairs = pairs(ids, config.window);
     if all_pairs.is_empty() {
@@ -232,7 +261,11 @@ fn train_on_stream(
     for _epoch in 0..config.epochs {
         for &(center, context) in &all_pairs {
             let progress = done / total_pairs;
-            let lr = lr_start * (1.0 - 0.9 * progress);
+            let step_lr = if decay_lr {
+                lr * (1.0 - 0.9 * progress)
+            } else {
+                lr
+            };
             done += 1.0;
 
             let (c, o) = (center as usize * dim, context as usize * dim);
@@ -244,7 +277,7 @@ fn train_on_stream(
             for j in 0..dim {
                 dot += v_buf[j] * w_out[o + j];
             }
-            let g = (sigmoid(dot) - 1.0) * lr;
+            let g = (sigmoid(dot) - 1.0) * step_lr;
             for j in 0..dim {
                 grad[j] += g * w_out[o + j];
                 w_out[o + j] -= g * v_buf[j];
@@ -260,7 +293,7 @@ fn train_on_stream(
                 for j in 0..dim {
                     ndot += v_buf[j] * w_out[n + j];
                 }
-                let g = sigmoid(ndot) * lr;
+                let g = sigmoid(ndot) * step_lr;
                 for j in 0..dim {
                     grad[j] += g * w_out[n + j];
                     w_out[n + j] -= g * v_buf[j];
@@ -348,6 +381,43 @@ mod tests {
                 m2.token_vector(id),
                 "same inputs must produce identical vectors for id {id}"
             );
+        }
+    }
+
+    #[test]
+    fn incremental_learning_rate_stays_at_the_configured_floor() {
+        let config = TrainerConfig {
+            dim: 1,
+            window: 1,
+            epochs: 1,
+            negatives: 0,
+            lr: 1.0,
+            ..Default::default()
+        };
+        let mut model = SkipGramModel::empty(1);
+        model.grow_to(2, &config);
+        let (w_in, w_out) = model.matrices_mut();
+        w_in.copy_from_slice(&[0.2, -0.3]);
+        w_out.copy_from_slice(&[0.4, 0.5]);
+
+        let mut expected_in = [0.2, -0.3];
+        let mut expected_out = [0.4, 0.5];
+        for (center, context) in [(0, 1), (1, 0)] {
+            let input = expected_in[center];
+            let output = expected_out[context];
+            let gradient = (sigmoid(input * output) - 1.0) * 0.1;
+            expected_out[context] -= gradient * input;
+            expected_in[center] -= gradient * output;
+        }
+
+        train_on_stream(&mut model, &[0, 1], vec![1, 1], &config, 0.1, false);
+
+        let (actual_in, actual_out) = model.matrices_mut();
+        for (actual, expected) in actual_in.iter().zip(expected_in) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        for (actual, expected) in actual_out.iter().zip(expected_out) {
+            assert!((actual - expected).abs() < 1e-6);
         }
     }
 

@@ -16,8 +16,7 @@ Authoritative docs:
 - `README.md` — user-facing status snapshot.
 
 Layout: `apps/atlas-cli` + `crates/atlas-{core,vocab,tokenizer,embedding,graph,storage}`.
-Most crates are deliberate empty placeholders for future milestones — do not
-delete them or fill them ahead of their milestone. `atlas-vocab` owns token
+All listed crates are implemented. Preserve their responsibility boundaries. `atlas-vocab` owns token
 ID management and persistence (M03); BPE mechanics stay in
 `atlas-tokenizer`.
 
@@ -49,9 +48,8 @@ corpus.
 
 - Inspect and reuse the existing project structure before making changes.
   Do not unnecessarily rewrite working code.
-- Work on one milestone at a time. Do not implement future milestones early;
-  M03 (Vocabulary) is the next one — do not start it without an approved
-  plan, and never start later milestones unprompted.
+- All roadmap milestones are complete. Further significant work needs an
+  approved plan; do not expand scope unprompted.
 - Before implementing a milestone or significant feature: inspect the project,
   present a brief plan with acceptance criteria, and wait for explicit
   approval. Small fixes, formatting, and straightforward corrections do not

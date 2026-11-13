@@ -1,6 +1,6 @@
 //! Hybrid vector + graph retrieval (M08).
 //!
-//! Two stages, kept as separate tiers rather than blended into one score:
+//! Two stages, combined by reciprocal rank fusion:
 //!
 //! 1. **Vector stage** (identical to M07's [`search`]): exact scan over
 //!    persisted embeddings → seed chunks with true cosine scores.
@@ -9,13 +9,12 @@
 //!    entities' relationship evidence points at candidate chunks, ranked by
 //!    incident PPR mass.
 //!
-//! Tiering is deliberate: vector scores stay real cosine similarities, and
-//! graph-only hits follow ranked by PPR mass — nothing is multiplied into a
-//! fabricated unified number. A chunk found by both stages is marked
-//! [`ResultSource::Both`] but keeps its vector position.
+//! Vector scores stay real cosine similarities. Ordering uses rank
+//! contributions from each stage. A chunk found by both stages is marked
+//! [`ResultSource::Both`] and receives both contributions.
 //!
 //! Fallback: an empty graph or no seed entities degrades hybrid to plain
-//! vector results. Missing chunk records are skipped and counted, never a
+//! vector results. Missing chunk records are skipped, never a
 //! hard failure — evidence may reference chunks removed elsewhere.
 //!
 //! Determinism: entity collection follows relationship insertion order,
@@ -212,7 +211,7 @@ pub async fn hybrid_search(
 
             // Candidate chunks: evidence of relationships incident to
             // expanded entities, scored by the best incident entity mass.
-            // Seed chunks stay in the vector tier; fusion marks them Both.
+            // In hybrid mode, seed chunks also receive graph ranks.
             let expanded_set: std::collections::HashSet<u32> = expanded.into_iter().collect();
             let mut best: std::collections::HashMap<String, (f64, Vec<String>)> =
                 std::collections::HashMap::new();
@@ -238,7 +237,7 @@ pub async fn hybrid_search(
                         .unwrap_or("?"),
                 );
                 for ev in &rel.evidence {
-                    if seed_chunk_ids.contains(ev.doc_id.as_str()) {
+                    if mode == SearchMode::Graph && seed_chunk_ids.contains(ev.doc_id.as_str()) {
                         continue;
                     }
                     if store.get_chunk(&ev.doc_id).await?.is_none() {

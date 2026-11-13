@@ -1,0 +1,5 @@
+[advisories]
+# This informational advisory reports that bincode is unmaintained. Atlas
+# retains bincode because it stores vocabulary, model, and cache files in this
+# format. Review this exception before changing the serializer.
+ignore = ["RUSTSEC-2025-0141"]

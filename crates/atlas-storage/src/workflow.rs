@@ -1,9 +1,8 @@
 //! The durable `learn` and `search` workflows.
 //!
 //! `learn`: `input → document → chunks → embeddings → graph → persistence`.
-//! Every write is an idempotent upsert keyed by deterministic IDs, so a
-//! duplicate `learn` is a no-op and a partial failure is repaired by simply
-//! running `learn` again — no transactions needed.
+//! SQLite writes the complete record group in one transaction. Re-running
+//! `learn` repairs missing derived records and keeps existing graph evidence.
 //!
 //! `search`: `query → embed_query → load persisted embeddings →
 //! BruteForceIndex → top-k chunks`. The index is rebuilt from the
@@ -46,49 +45,6 @@ pub async fn learn(
     let doc_id = doc_id_for(text);
     let chunker = Chunker::new(tokenizer, 128, 0);
     let chunks = chunker.chunk(text);
-    let chunk_ids: Vec<String> = chunks
-        .iter()
-        .enumerate()
-        .map(|(ordinal, _)| format!("{doc_id}:{ordinal}"))
-        .collect();
-
-    // Duplicate detection doubles as partial-failure repair: the durable
-    // learn flow is a sequence of idempotent upserts with no transaction, so
-    // an interrupted run can leave the document row without all of its
-    // chunks/embeddings. Only a document whose *complete* chunk set exists
-    // counts as a duplicate; a partial one falls through and is repaired by
-    // re-running the idempotent pipeline. (A crash mid-chunk-write can
-    // still leave a gap between two checks — repaired the same way on the
-    // next learn.)
-    if store.document_exists(&doc_id).await? {
-        let mut complete = true;
-        for id in &chunk_ids {
-            if store.get_chunk(id).await?.is_none() {
-                complete = false;
-                break;
-            }
-        }
-        if complete {
-            return Ok(LearnSummary {
-                doc_id,
-                duplicate: true,
-                chunks: 0,
-                embeddings: 0,
-                entities: 0,
-                relationships: 0,
-            });
-        }
-    }
-
-    let chunk_texts: Vec<&str> = chunks.iter().map(|c| c.text).collect();
-
-    // One batched embedding call for the whole document.
-    let vectors = embedder.embed_documents(&chunk_texts)?;
-    anyhow::ensure!(
-        vectors.len() == chunks.len(),
-        "embedder returned wrong vector count"
-    );
-
     let model_id = embedder.model_id().to_string();
     let chunk_records: Vec<ChunkRecord> = chunks
         .iter()
@@ -100,6 +56,32 @@ pub async fn learn(
             text: chunk.text.to_string(),
         })
         .collect();
+    let extractor = Extractor::new(ExtractorConfig::default());
+    let mut graph = KnowledgeGraph::new();
+    for record in &chunk_records {
+        extractor.extract(&record.chunk_id, &record.text, &mut graph);
+    }
+    let chunk_texts: Vec<&str> = chunks.iter().map(|c| c.text).collect();
+    embedder.validate_documents(&chunk_texts)?;
+    if store
+        .learn_is_complete(&doc_id, &model_id, &chunk_records, &graph)
+        .await?
+    {
+        return Ok(LearnSummary {
+            doc_id,
+            duplicate: true,
+            chunks: 0,
+            embeddings: 0,
+            entities: 0,
+            relationships: 0,
+        });
+    }
+    let vectors = embedder.embed_documents(&chunk_texts)?;
+    anyhow::ensure!(
+        vectors.len() == chunks.len(),
+        "embedder returned wrong vector count"
+    );
+    atlas_embedding::validate_vectors(&vectors)?;
     let embedding_records: Vec<EmbeddingRecord> = chunk_records
         .iter()
         .zip(vectors)
@@ -110,17 +92,7 @@ pub async fn learn(
         })
         .collect();
 
-    // Graph extraction runs per chunk so evidence points at chunks. The
-    // chunk id here is exactly the one persisted below.
-    let extractor = Extractor::new(ExtractorConfig::default());
-    let mut graph = KnowledgeGraph::new();
-    for record in &chunk_records {
-        extractor.extract(&record.chunk_id, &record.text, &mut graph);
-    }
-
-    // A single grouped write: transactional backends commit document,
-    // chunks, embeddings, and graph atomically; others fall back to the
-    // sequential primitive writes (same order as before batching).
+    // Persist all derived records in the existing atomic group.
     let document = DocumentRecord {
         doc_id: doc_id.clone(),
         text: text.to_string(),
@@ -162,6 +134,9 @@ pub async fn search(
     query: &str,
     k: usize,
 ) -> anyhow::Result<Vec<SearchResult>> {
+    if k == 0 {
+        return Ok(Vec::new());
+    }
     let model_id = embedder.model_id();
     let embeddings = store.load_embeddings(model_id).await?;
     if embeddings.is_empty() {
@@ -169,12 +144,20 @@ pub async fn search(
     }
 
     let dim = embeddings[0].vector.len();
-    let vectors: Vec<Vec<f32>> = embeddings.iter().map(|e| e.vector.clone()).collect();
-    let index = crate::brute::BruteForceIndex::build(dim, &vectors)?;
+    anyhow::ensure!(dim > 0, "index dimension must be positive");
+    // Keep records for chunk IDs; do not clone another full vector batch.
+    let mut index = crate::brute::BruteForceIndex::with_capacity(dim, embeddings.len());
+    for embedding in &embeddings {
+        index.add(&embedding.vector)?;
+    }
     let query_vector = embedder.embed_query(query)?;
+    anyhow::ensure!(
+        query_vector.len() == dim && query_vector.iter().all(|x| x.is_finite()),
+        "query embedding must have {dim} finite components"
+    );
 
     let mut results = Vec::new();
-    for hit in crate::index::VectorIndex::search(&index, &query_vector, k) {
+    for hit in crate::index::VectorIndex::search(&index, &query_vector, embeddings.len()) {
         let chunk_id = &embeddings[hit.id as usize].chunk_id;
         let Some(chunk) = store.get_chunk(chunk_id).await? else {
             // Orphaned embedding (its chunk was deleted independently).
@@ -188,6 +171,9 @@ pub async fn search(
             score: hit.score,
             text: chunk.text,
         });
+        if results.len() == k {
+            break;
+        }
     }
     Ok(results)
 }

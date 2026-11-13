@@ -52,9 +52,9 @@ terminal.
 ```bash
 atlas learn "Rust uses Tokio."
 
-atlas similar rust
+atlas similar rust -k 5
 
-atlas graph rust
+atlas graph rust --hops 1 --limit 50
 
 atlas search async
 
@@ -88,6 +88,9 @@ Represent chunks of learned text as dense vectors.
   (FastEmbed / `BAAI/bge-small-en-v1.5`), with a content-addressed disk cache.
 - M05: Atlas's **own** embeddings via Skip-Gram training and incremental
   learning. The pretrained path remains as a comparison baseline.
+- `atlas similar` embeds entity display labels at query time and ranks them by
+  cosine similarity. It does not store entity vectors or compare entity
+  contexts.
 
 ### 4. Knowledge graph
 
@@ -142,7 +145,7 @@ Knowledge Graph   Vector Search
 | -------------- | --------------------- | ------------------------------------ | ------ |
 | Language       | Rust                  | Primary programming language         | ✅      |
 | CLI            | clap                  | Command-line interface               | ✅ (M01) |
-| Async runtime  | tokio                 | Asynchronous runtime                 | 🔜      |
+| Async runtime  | tokio | Asynchronous CLI runtime | Complete |
 | Storage        | rusqlite (SQLite)     | Documents, graph, and vector storage | ✅ (M07; SQLite-only since the post-M09 migration) |
 | Embeddings     | fastembed             | Pretrained embedding baseline (M04)  | ✅      |
 | Serialization  | serde                 | Serialization framework              | ✅      |
@@ -227,8 +230,8 @@ These are settled decisions. Changing any of them requires explicit approval.
 6. **No text normalization inside the tokenizer.** The byte-level tokenizer
    stays lossless; normalization is a consumer-layer concern, deferred until a
    milestone needs it (decision recorded, not yet made).
-7. **Vocabulary key format** (BPE token strings, byte sequences, or normalized
-   words) is deferred to M03 planning.
+7. **Vocabulary keys are raw BPE token bytes.** M03 assigns dense stable
+   IDs in first-occurrence order and persists that ordered mapping.
 8. **Vector-index code location** (currently `atlas-storage` groundwork on a
    branch) is revisited in M04 when similarity search is wired end to end.
 9. **fastembed's dependency feature set is frozen** unless separately
