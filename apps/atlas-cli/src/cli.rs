@@ -36,15 +36,24 @@ pub enum Command {
         /// Text to learn from.
         text: String,
     },
-    /// Show entities similar to a term.
+    /// Show entities with labels similar to a term.
     Similar {
         /// The term to compare against.
         term: String,
+        /// Number of entities to show.
+        #[arg(short = 'k', long, default_value_t = 5)]
+        top: usize,
     },
-    /// Show the relationship graph around an entity.
+    /// Show relationships around an entity.
     Graph {
         /// The entity to explore.
         entity: String,
+        /// Maximum graph distance from the entity (0 to 3).
+        #[arg(long, default_value_t = 1)]
+        hops: usize,
+        /// Maximum number of relationship rows to show.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
     },
     /// Search learned content.
     Search {
@@ -113,6 +122,47 @@ mod tests {
             parse(&["ask", "What does Rust use?"]).unwrap().command,
             Command::Ask { .. }
         ));
+    }
+
+    #[test]
+    fn parses_graph_depth_and_limit() {
+        let graph = parse(&["graph", "rust"]).unwrap().command;
+        let Command::Graph {
+            entity,
+            hops,
+            limit,
+        } = graph
+        else {
+            panic!("expected graph");
+        };
+        assert_eq!(entity, "rust");
+        assert_eq!(hops, 1);
+        assert_eq!(limit, 50);
+
+        let graph = parse(&["graph", "rust", "--hops", "2", "--limit", "7"])
+            .unwrap()
+            .command;
+        let Command::Graph { hops, limit, .. } = graph else {
+            panic!("expected graph");
+        };
+        assert_eq!(hops, 2);
+        assert_eq!(limit, 7);
+    }
+
+    #[test]
+    fn parses_similar_top_count() {
+        let similar = parse(&["similar", "rust"]).unwrap().command;
+        let Command::Similar { term, top } = similar else {
+            panic!("expected similar");
+        };
+        assert_eq!(term, "rust");
+        assert_eq!(top, 5);
+
+        let similar = parse(&["similar", "rust", "-k", "3"]).unwrap().command;
+        let Command::Similar { top, .. } = similar else {
+            panic!("expected similar");
+        };
+        assert_eq!(top, 3);
     }
 
     #[test]

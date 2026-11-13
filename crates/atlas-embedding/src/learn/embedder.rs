@@ -6,11 +6,7 @@
 //! semantics for now — simple, deterministic, and honest about what it is.
 //! Texts with no known tokens embed to the zero vector.
 //!
-//! Cache note: `model_id` encodes dim and vocabulary size, not training
-//! state. Retraining with the same vocabulary length under the same
-//! `model_id` can reuse cached vectors from an older model — a documented
-//! limitation, not a correctness failure (caching learned embeddings is
-//! opt-in, unlike the FastEmbed path).
+//! Model identity includes inference weights, vocabulary, tokenizer, and pooling version.
 
 use crate::embedder::Embedder;
 use crate::learn::model::SkipGramModel;
@@ -31,20 +27,23 @@ impl LearnedEmbedder {
     /// Pair a trained model with the tokenizer and vocabulary it was
     /// trained against.
     pub fn new(model: SkipGramModel, tokenizer: BpeTokenizer, vocab: Vocab) -> Self {
-        if model.vocab_len() != vocab.len() {
-            panic!(
-                "model has {} rows but vocabulary has {} entries",
-                model.vocab_len(),
-                vocab.len()
-            );
-        }
-        let model_id = format!("atlas-skipgram-d{}-v{}", model.dim(), vocab.len());
-        LearnedEmbedder {
+        Self::try_new(model, tokenizer, vocab).expect("incompatible learned model")
+    }
+
+    /// Reject an incompatible vocabulary or tokenizer before inference.
+    pub fn try_new(
+        model: SkipGramModel,
+        tokenizer: BpeTokenizer,
+        vocab: Vocab,
+    ) -> Result<Self, super::model::LearnerError> {
+        model.check_binding(&vocab, &tokenizer)?;
+        let model_id = model.inference_id();
+        Ok(LearnedEmbedder {
             model,
             tokenizer,
             vocab,
             model_id,
-        }
+        })
     }
 
     /// The trained model, e.g. to persist after further `learn` calls.
@@ -170,9 +169,10 @@ mod tests {
     #[test]
     fn model_id_encodes_dim_and_vocab() {
         let (embedder, vocab) = trained();
-        assert_eq!(
-            embedder.model_id(),
-            format!("atlas-skipgram-d8-v{}", vocab.len())
+        assert!(
+            embedder
+                .model_id()
+                .starts_with(&format!("atlas-skipgram-d8-v{}-", vocab.len()))
         );
     }
 

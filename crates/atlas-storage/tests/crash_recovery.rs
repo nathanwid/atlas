@@ -64,9 +64,9 @@ fn crash_child_worker() {
 
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     rt.block_on(async {
+        let store = SqliteStore::open_durable(&db).await.unwrap();
         match role.as_str() {
             "sqlite" => {
-                let store = SqliteStore::open_durable(&db).await.unwrap();
                 // Deterministic crash stage: exactly the document row,
                 // committed durably (synchronous=FULL), nothing else.
                 store
@@ -78,19 +78,19 @@ fn crash_child_worker() {
             // document lands in one commit, so the marker means the
             // group has committed (or learn errored before it).
             "sqlite_batch" => {
-                let store = SqliteStore::open_durable(&db).await.unwrap();
                 learn(&store, &tokenizer(), &FakeEmbedder, &text)
                     .await
                     .unwrap();
             }
             other => panic!("unknown crash-child role {other}"),
         }
+        // Signaled only after the stage above has returned Ok.
+        std::fs::write(&marker, b"stage-committed").expect("marker write");
+        loop {
+            std::thread::sleep(Duration::from_millis(200));
+            std::hint::black_box(&store);
+        }
     });
-    // Signaled only after the stage above has returned Ok.
-    std::fs::write(&marker, b"stage-committed").expect("marker write");
-    loop {
-        std::thread::sleep(Duration::from_millis(200));
-    }
 }
 
 /// Spawn the crash child for `role`, wait for its stage marker, kill it.
@@ -123,6 +123,7 @@ fn spawn_and_kill(
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+    let wal_open = db.with_file_name("atlas.db-wal").exists();
     // Unclean termination: no Drop, no SQLite close, no fsync by the child.
     // Always reaped, including early-failure paths.
     child.kill().expect("kill crash child");
@@ -130,6 +131,7 @@ fn spawn_and_kill(
     if let Some(message) = failure {
         panic!("{message}");
     }
+    assert!(wal_open, "child must keep its SQLite connection open");
     Ok(())
 }
 
@@ -189,7 +191,7 @@ async fn process_kill_between_document_and_chunks_is_repaired() {
 /// subset. All-or-nothing is asserted, and both outcomes are repaired by
 /// the documented re-`learn`.
 #[tokio::test]
-async fn killed_mid_learn_leaves_all_or_nothing_state() {
+async fn killed_after_learn_keeps_committed_group() {
     let dir = tempfile::TempDir::new().unwrap();
     let db = dir.path().join("atlas.db");
     let marker = dir.path().join("marker");

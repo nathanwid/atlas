@@ -14,7 +14,7 @@ current status.
 | M04       | Embedding Engine   | Chunking, embeddings, similarity search                 | ✅ complete |
 | M05       | Learning Engine    | Skip-Gram training and incremental learning             | ✅ complete |
 | M06       | Knowledge Graph    | Entity extraction and relationship graph                | ✅ complete |
-| M07       | Storage            | Persist documents, embeddings, and graph (SurrealDB)    | ✅ complete |
+| M07       | Storage            | Persist documents, embeddings, and graph (now SQLite)    | ✅ complete |
 | M08       | Semantic Search    | Hybrid vector and graph retrieval                       | ✅ complete |
 | M09       | Question Answering | Answer questions from Atlas knowledge                   | ✅ complete |
 
@@ -252,15 +252,16 @@ approaches.
   expansion chunks.
 - **Evaluation** (crafted 8-doc fixture with a designed relationship chain,
   deterministic word-overlap embedder, recall@3, report + mechanics):
-  - Query 1 (gold reachable only via the graph): vector **0.5**, hybrid
-    **1.0** — the graph-only gold chunk is recovered.
-  - Query 2 (vector already saturated): vector **1.0**, hybrid **0.5** —
-    RRF tie-breaks can displace correct vector hits. Hybrid is **not**
-    claimed better; both directions are pinned by deterministic tests.
+  - After the P1 fusion fix, both committed queries have vector **1.0**
+    and hybrid **1.0** recall@3. All three vector seeds in each query also
+    have graph support and receive both rank contributions.
+  - A separate controlled fixture verifies that combined support changes
+    ordering. Graph-only mode still retrieves expansion evidence. Fusion
+    does not guarantee better recall or graph-only results in the top-k.
 
 **Boundary notes.** `atlas-graph` remains std-only and SurrealDB-free (PPR
 runs on the in-memory graph loaded from M07 tables). M09 question answering
-is the only remaining milestone; GraphRAG/LLM extraction stay out.
+is also complete; GraphRAG/LLM extraction stay out.
 
 **Dependencies.** M04 (vector stage), M06 (graph walk), M07 (persistence +
 chunk-keyed evidence). None new.
@@ -332,6 +333,28 @@ architecture or CLI semantics:
 
 ---
 
+## Post-roadmap CLI views
+
+These approved CLI views use the SQLite graph and existing model and index
+APIs. They add no table, stored vector, cache, or third-party dependency.
+
+- **`atlas graph <entity>`** resolves a trimmed, case-insensitive entity name
+  and shows its relationship neighborhood. `--hops` is bounded from 0 to 3
+  (default 1); `--limit` caps displayed relationship rows (default 50).
+  The command keeps edges whose evidence is stale, but it shows neither stale
+  text nor stale citations.
+- **`atlas similar <term>`** embeds entity display labels with the existing
+  FastEmbed model and ranks them by cosine similarity. `-k/--top` defaults to
+  5. It excludes the exact matching entity. The command compares labels only;
+  it does not compare the contexts where entities appear.
+
+Entity label vectors are built in memory for each `similar` call. This keeps
+SQLite formats unchanged, but embedding work grows with the number of
+entities. The command tests use fake embedders and do not download model
+weights.
+
+---
+
 ## Reconciliation map (old numbering → original roadmap)
 
 Code that already exists was built under a temporary milestone numbering; the
@@ -345,7 +368,7 @@ original roadmap above is the source of truth going forward.
 | Vector cache (SHA-256 keyed, bincode) | M04 (complete); durability revisited in M07 |
 | `BruteForceIndex` + `VectorIndex` + recall@k eval | M04 (complete, merged from `atlas/vector-search`) |
 | `atlas-vocab` | M03 (complete) — consumed by M05, not M04 |
-| `atlas-cli` command placeholders (`learn/similar/graph/search/ask`) | M01 wired the commands; behavior arrives per milestone — `learn`/`search` need M07 persistence first |
+| `atlas-cli` command set (`learn/similar/graph/search/ask`) | M01 wired parsing and dispatch; command behavior arrived with later milestones and the post-roadmap graph and label views |
 
 ---
 

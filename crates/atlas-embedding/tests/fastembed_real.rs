@@ -5,6 +5,7 @@
 //! fastembed's cache directory and needs network access. Run explicitly with
 //! `cargo test -p atlas-embedding -- --ignored`.
 
+use atlas_embedding::Embedder;
 use atlas_embedding::{Chunker, FastembedEmbedder, VectorCache, embed_chunks};
 
 fn fixture(name: &str) -> String {
@@ -54,4 +55,29 @@ fn embeds_corpus_chunks_with_real_model() {
     // Second pass over the same chunks: pure cache hits, identical vectors.
     let again = embed_chunks(&embedder, &mut cache, &texts).expect("cache hits");
     assert_eq!(again, vectors);
+}
+
+#[test]
+#[ignore = "loads cached BGE weights; run explicitly"]
+fn oversized_bge_input_returns_actionable_error() {
+    // This test process runs alone. Reuse the repository's normal model cache.
+    std::env::set_current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).unwrap();
+    let embedder = atlas_embedding::FastembedEmbedder::bge_small_en_v1_5().unwrap();
+    let text = format!("{} Rust uses Tokio.", "_".repeat(512));
+    let error = embedder
+        .embed_documents(&[&text])
+        .expect_err("must not silently truncate");
+    assert!(error.to_string().contains("512"));
+    assert!(error.to_string().contains("shorter"));
+    assert!(embedder.embed_documents(&[&"word ".repeat(510)]).is_ok());
+    assert!(embedder.embed_documents(&[&"word ".repeat(511)]).is_err());
+    assert!(
+        embedder
+            .embed_documents(&[&"\u{65e5}".repeat(511)])
+            .is_err()
+    );
+    let query_error = embedder
+        .embed_query(&text)
+        .expect_err("query prefix counts toward limit");
+    assert!(query_error.to_string().contains("query"));
 }

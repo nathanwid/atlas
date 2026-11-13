@@ -12,6 +12,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 
+#[cfg(test)]
+thread_local! { static NEIGHBOR_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
 /// A vocabulary entry's — an entity's — stable numeric identity.
 pub type EntityId = u32;
 /// Interned predicate string identity.
@@ -94,6 +97,8 @@ pub struct KnowledgeGraph {
     predicates: Vec<String>,
     predicate_ids: HashMap<String, PredicateId>,
     edges: Vec<Relationship>,
+    // Relationship IDs in insertion order; metadata remains on the edge.
+    incident: Vec<Vec<RelationshipId>>,
     edge_ids: HashMap<(EntityId, PredicateId, EntityId), RelationshipId>,
 }
 
@@ -186,10 +191,13 @@ impl KnowledgeGraph {
     /// One hop from `id` in both directions, in edge insertion order.
     pub fn neighbors(&self, id: EntityId) -> Vec<Neighbor> {
         let mut out = Vec::new();
-        for (rid, rel) in self.edges.iter().enumerate() {
+        for &rid in self.incident.get(id as usize).into_iter().flatten() {
+            let rel = &self.edges[rid as usize];
+            #[cfg(test)]
+            NEIGHBOR_VISITS.with(|visits| visits.set(visits.get() + 1));
             if rel.src == id {
                 out.push(Neighbor {
-                    relationship: rid as RelationshipId,
+                    relationship: rid,
                     other: rel.dst,
                     direction: Direction::Outgoing,
                     predicate: rel.predicate,
@@ -197,7 +205,7 @@ impl KnowledgeGraph {
                 });
             } else if rel.dst == id {
                 out.push(Neighbor {
-                    relationship: rid as RelationshipId,
+                    relationship: rid,
                     other: rel.src,
                     direction: Direction::Incoming,
                     predicate: rel.predicate,
@@ -250,6 +258,7 @@ impl KnowledgeGraph {
             display: display.trim().to_string(),
             kind: None,
         });
+        self.incident.push(Vec::new());
         self.entity_ids.insert(key, id);
         id
     }
@@ -300,6 +309,10 @@ impl KnowledgeGraph {
             origin,
             evidence: vec![evidence],
         });
+        self.incident[src as usize].push(rid);
+        if dst != src {
+            self.incident[dst as usize].push(rid);
+        }
         self.edge_ids.insert((src, predicate, dst), rid);
         if origin == EdgeOrigin::Explicit {
             // Confidence upgrade: the fallback edges of this entity pair are
@@ -564,5 +577,82 @@ mod tests {
         assert_ne!(a, c);
         assert_eq!(d, Some(a));
         assert_eq!(g.predicate_count(), 2, "no duplicate predicate rows");
+    }
+}
+
+#[cfg(test)]
+mod adjacency_regressions {
+    use super::*;
+    #[test]
+    fn local_lookup_inspects_only_incident_edges() {
+        let mut graph = KnowledgeGraph::new();
+        let ids: Vec<_> = (0..100)
+            .map(|i| graph.intern_entity(&i.to_string()))
+            .collect();
+        let p = graph.intern_predicate("uses");
+        for pair in ids.windows(2) {
+            graph.link(
+                pair[0],
+                p,
+                pair[1],
+                EdgeOrigin::CoOccurrence,
+                Evidence {
+                    doc_id: "d".into(),
+                    sentence: "s".into(),
+                },
+            );
+        }
+        NEIGHBOR_VISITS.with(|v| v.set(0));
+        assert_eq!(graph.neighbors(ids[0]).len(), 1);
+        assert_eq!(
+            NEIGHBOR_VISITS.with(|v| v.get()),
+            1,
+            "unrelated edges must not be scanned"
+        );
+    }
+    #[test]
+    fn neighbors_match_reference_after_duplicates_self_links_and_upgrades() {
+        let mut graph = KnowledgeGraph::new();
+        let a = graph.intern_entity("A");
+        let b = graph.intern_entity("B");
+        let isolated = graph.intern_entity("C");
+        let p = graph.intern_predicate("uses");
+        for (src, dst, origin) in [
+            (a, a, EdgeOrigin::CoOccurrence),
+            (a, b, EdgeOrigin::CoOccurrence),
+            (b, a, EdgeOrigin::Explicit),
+            (a, b, EdgeOrigin::Explicit),
+        ] {
+            graph.link(
+                src,
+                p,
+                dst,
+                origin,
+                Evidence {
+                    doc_id: "d".into(),
+                    sentence: "s".into(),
+                },
+            );
+        }
+        for id in [a, b, isolated] {
+            let expected: Vec<_> = graph
+                .relationships()
+                .filter_map(|(rid, r)| {
+                    if r.src == id {
+                        Some((rid, r.dst, Direction::Outgoing, r.origin))
+                    } else if r.dst == id {
+                        Some((rid, r.src, Direction::Incoming, r.origin))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let actual: Vec<_> = graph
+                .neighbors(id)
+                .iter()
+                .map(|n| (n.relationship, n.other, n.direction, n.origin))
+                .collect();
+            assert_eq!(actual, expected);
+        }
     }
 }

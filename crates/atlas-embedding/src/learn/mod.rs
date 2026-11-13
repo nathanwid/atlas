@@ -29,4 +29,4 @@ pub mod trainer;
 
 pub use embedder::LearnedEmbedder;
 pub use model::{LearnerError, SkipGramModel};
-pub use trainer::{TrainerConfig, train};
+pub use trainer::{TrainerConfig, train, try_train};

@@ -27,6 +27,26 @@ impl Embedder for FakeEmbedder {
     }
 }
 
+struct RankedEmbedder;
+
+impl Embedder for RankedEmbedder {
+    fn model_id(&self) -> &str {
+        "ranked-test-model"
+    }
+
+    fn embed_documents(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(texts
+            .iter()
+            .map(|text| match *text {
+                "north" | "query" => vec![1.0, 0.0],
+                "east" => vec![0.0, 1.0],
+                "south" => vec![-1.0, 0.0],
+                _ => panic!("unexpected fixture text: {text}"),
+            })
+            .collect())
+    }
+}
+
 fn tokenizer() -> BpeTokenizer {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -129,6 +149,31 @@ async fn persisted_search_returns_the_learned_chunk() {
 }
 
 #[tokio::test]
+async fn search_preserves_scores_order_and_chunk_ids() {
+    let store = SqliteStore::open_mem().await.unwrap();
+    let tok = tokenizer();
+    for text in ["north", "east", "south"] {
+        learn(&store, &tok, &RankedEmbedder, text).await.unwrap();
+    }
+
+    let hits = search(&store, &RankedEmbedder, "query", 3).await.unwrap();
+
+    let expected_ids: Vec<String> = ["north", "east", "south"]
+        .into_iter()
+        .map(|text| format!("{}:0", doc_id_for(text)))
+        .collect();
+    assert_eq!(
+        hits.iter()
+            .map(|hit| hit.chunk_id.clone())
+            .collect::<Vec<_>>(),
+        expected_ids
+    );
+    for (hit, score) in hits.iter().zip([1.0, 0.0, -1.0]) {
+        assert!((hit.score - score).abs() < 1e-6);
+    }
+}
+
+#[tokio::test]
 async fn graph_roundtrip_preserves_semantics_and_evidence() {
     let store = SqliteStore::open_mem().await.unwrap();
     let tok = tokenizer();
@@ -181,6 +226,24 @@ async fn graph_roundtrip_preserves_semantics_and_evidence() {
     assert_eq!(extends.len(), 1);
     assert_eq!(extends[0].origin, atlas_graph::EdgeOrigin::Explicit);
     let _ = (rust, cargo);
+}
+
+#[tokio::test]
+async fn learning_two_documents_with_the_same_fact_retains_both_sources() {
+    let store = SqliteStore::open_mem().await.unwrap();
+    let tok = tokenizer();
+    let texts = ["Rust uses Tokio.", "Rust uses Tokio for async runtimes."];
+    for text in texts {
+        learn(&store, &tok, &FakeEmbedder, text).await.unwrap();
+    }
+    let graph = store.load_graph().await.unwrap();
+    let uses = graph
+        .relationships()
+        .find(|(_, rel)| graph.predicate(rel.predicate) == Some("uses"))
+        .unwrap()
+        .1;
+    let ids: Vec<_> = uses.evidence.iter().map(|ev| ev.doc_id.clone()).collect();
+    assert_eq!(ids, texts.map(|text| format!("{}:0", doc_id_for(text))));
 }
 
 #[tokio::test]

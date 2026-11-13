@@ -137,6 +137,10 @@ impl<'t> Chunker<'t> {
                 start: offsets[start],
             });
 
+            if end == pieces.len() {
+                break;
+            }
+
             // Carry piece-aligned overlap into the next chunk. The guard
             // `j > start + 1` keeps at least one piece of forward progress.
             if self.overlap_tokens > 0 {

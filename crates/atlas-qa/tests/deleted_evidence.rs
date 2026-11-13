@@ -88,6 +88,13 @@ async fn answers_cite_only_recoverable_chunks_after_deletion() {
     // Sanity before deletion: both chunks answerable.
     let before = ask(&store, &embedder, "Rust tooling").await.unwrap();
     assert!(!before.insufficient);
+    assert!(
+        before
+            .lead_in
+            .as_deref()
+            .unwrap()
+            .contains("Rust -[uses]-> Tokio")
+    );
     let cited: HashSet<&str> = before
         .sentences
         .iter()
@@ -104,6 +111,14 @@ async fn answers_cite_only_recoverable_chunks_after_deletion() {
         !after.insufficient,
         "doc 1 still exists and answers the question"
     );
+    assert!(
+        !after
+            .lead_in
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Rust -[uses]-> Tokio")
+    );
+    assert!(!after.render().contains("Rust -[uses]-> Tokio"));
     for sentence in &after.sentences {
         assert_ne!(sentence.chunk_id, doc0, "deleted chunk must never be cited");
         let chunk = store
@@ -139,4 +154,125 @@ async fn deleting_all_evidence_leads_to_insufficient() {
         "no recoverable evidence means insufficient"
     );
     assert!(answer.sentences.is_empty());
+}
+
+/// The answer chunk is retrieved. Supporting chunks have no embedding, so
+/// lead-in validation must also handle evidence outside the retrieved hits.
+async fn lead_in_store(src: &str, evidence: Vec<atlas_graph::Evidence>) -> SqliteStore {
+    let store = SqliteStore::open_mem().await.unwrap();
+    let text = format!("{src} tooling facts remain available.");
+    put_chunk(&store, "answer:0", &text).await;
+    store
+        .upsert_embedding(&atlas_storage::EmbeddingRecord {
+            chunk_id: "answer:0".into(),
+            model_id: "word-overlap".into(),
+            vector: WordOverlapEmbedder.embed_query(&text).unwrap(),
+        })
+        .await
+        .unwrap();
+    let mut graph = atlas_graph::KnowledgeGraph::new();
+    let source = graph.intern_entity(src);
+    let destination = graph.intern_entity("Tokio");
+    let predicate = graph.intern_predicate("uses");
+    for ev in evidence {
+        graph.link(
+            source,
+            predicate,
+            destination,
+            atlas_graph::EdgeOrigin::Explicit,
+            ev,
+        );
+    }
+    store.persist_graph(&graph).await.unwrap();
+    store
+}
+
+async fn put_chunk(store: &SqliteStore, id: &str, text: &str) {
+    let doc_id = id.split(':').next().unwrap();
+    store.upsert_document(doc_id, text).await.unwrap();
+    store
+        .upsert_chunk(&atlas_storage::ChunkRecord {
+            chunk_id: id.into(),
+            doc_id: doc_id.into(),
+            ordinal: 0,
+            text: text.into(),
+        })
+        .await
+        .unwrap();
+}
+
+fn sighting(chunk_id: &str, sentence: &str) -> atlas_graph::Evidence {
+    atlas_graph::Evidence {
+        doc_id: chunk_id.into(),
+        sentence: sentence.into(),
+    }
+}
+
+#[tokio::test]
+async fn lead_in_uses_first_live_source_and_rejects_stale_or_empty_evidence() {
+    let sentence = "Rust uses Tokio";
+    let store = lead_in_store(
+        "Rust",
+        vec![
+            sighting("missing:0", sentence),
+            sighting("wrong:0", sentence),
+            sighting("empty:0", ""),
+            sighting("live:0", sentence),
+        ],
+    )
+    .await;
+    put_chunk(&store, "wrong:0", "Different content").await;
+    put_chunk(&store, "empty:0", "Different content").await;
+    put_chunk(&store, "live:0", "Rust uses Tokio for async runtimes.").await;
+    let answer = ask(&store, &WordOverlapEmbedder, "Rust tooling")
+        .await
+        .unwrap();
+    let lead = answer.lead_in.unwrap();
+    assert!(lead.contains("Rust -[uses]-> Tokio"));
+    assert!(lead.contains("[doc live, chunk live:0]"), "{lead}");
+    assert!(!lead.contains("missing:0") && !lead.contains("wrong:0") && !lead.contains("empty:0"));
+
+    store.delete_chunk("live:0").await.unwrap();
+    let answer = ask(&store, &WordOverlapEmbedder, "Rust tooling")
+        .await
+        .unwrap();
+    assert!(!answer.insufficient);
+    assert!(answer.lead_in.is_none());
+    assert!(!answer.render().contains("Rust -[uses]-> Tokio"));
+}
+
+#[tokio::test]
+async fn lead_in_matches_whole_entity_phrases() {
+    let store = lead_in_store("Go", vec![sighting("live:0", "Go uses Tokio")]).await;
+    put_chunk(&store, "live:0", "Go uses Tokio.").await;
+    let answer = ask(&store, &WordOverlapEmbedder, "Cargo tooling")
+        .await
+        .unwrap();
+    assert!(!answer.insufficient);
+    assert!(answer.lead_in.is_none(), "Go must not match Cargo");
+    for question in ["go tooling", "(GO) tooling"] {
+        assert!(
+            ask(&store, &WordOverlapEmbedder, question)
+                .await
+                .unwrap()
+                .lead_in
+                .is_some()
+        );
+    }
+    let store = lead_in_store("New York", vec![sighting("live:0", "New York uses Tokio")]).await;
+    put_chunk(&store, "live:0", "New York uses Tokio.").await;
+    assert!(
+        ask(&store, &WordOverlapEmbedder, "(NEW YORK) tooling")
+            .await
+            .unwrap()
+            .lead_in
+            .is_some()
+    );
+    assert!(
+        ask(&store, &WordOverlapEmbedder, "new yorker tooling")
+            .await
+            .unwrap()
+            .lead_in
+            .is_none()
+    );
 }

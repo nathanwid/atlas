@@ -145,6 +145,26 @@ fn upsert_json_on<T: serde::Serialize>(
     Ok(())
 }
 
+fn record_exists(
+    conn: &Connection,
+    sql: &str,
+    params: impl rusqlite::Params,
+) -> anyhow::Result<bool> {
+    Ok(conn
+        .query_row(sql, params, |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
+fn next_json_ordinal(conn: &Connection, table: &str) -> anyhow::Result<u32> {
+    let next: i64 = conn.query_row(
+        &format!("SELECT COALESCE(MAX(json_extract(value, '$.ordinal')), -1) + 1 FROM {table}"),
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(next.try_into()?)
+}
+
 /// Upsert one relationship row and replace its whole evidence set. No
 /// transaction of its own: callers decide the transaction scope.
 fn write_relationship_on(conn: &Connection, rel: &RelationshipRecord) -> anyhow::Result<()> {
@@ -174,6 +194,57 @@ fn write_relationship_on(conn: &Connection, rel: &RelationshipRecord) -> anyhow:
         )?;
     }
     Ok(())
+}
+
+/// Merge a document's evidence into an existing relationship. The caller
+/// must hold the write transaction before these reads, so another writer
+/// cannot replace the evidence between the read and the write.
+fn merge_learn_relationship_on(conn: &Connection, rel: &RelationshipRecord) -> anyhow::Result<()> {
+    let id = crate::records::relationship_id(&rel.src, &rel.predicate, &rel.dst);
+    let previous: Option<(String, u32)> = conn
+        .query_row(
+            "SELECT origin, ordinal FROM relationship WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((origin, ordinal)) = previous else {
+        let mut rel = rel.clone();
+        let next: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM relationship",
+            [],
+            |r| r.get(0),
+        )?;
+        rel.ordinal = next.try_into()?;
+        return write_relationship_on(conn, &rel);
+    };
+
+    let mut merged = rel.clone();
+    merged.ordinal = ordinal;
+    if origin == "explicit" {
+        merged.origin = origin;
+    }
+    let mut stmt = conn.prepare(
+        "SELECT doc_id, sentence FROM evidence WHERE relationship_id = ?1 ORDER BY ordinal",
+    )?;
+    let mut evidence = stmt
+        .query_map(params![id], |row| {
+            Ok(EvidenceRecord {
+                doc_id: row.get(0)?,
+                sentence: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for ev in &rel.evidence {
+        if !evidence
+            .iter()
+            .any(|old| old.doc_id == ev.doc_id && old.sentence == ev.sentence)
+        {
+            evidence.push(ev.clone());
+        }
+    }
+    merged.evidence = evidence;
+    write_relationship_on(conn, &merged)
 }
 
 fn write_embedding_on(conn: &Connection, embedding: &EmbeddingRecord) -> anyhow::Result<()> {
@@ -311,7 +382,9 @@ impl Backend for SqliteStore {
     }
 
     async fn load_graph(&self) -> anyhow::Result<KnowledgeGraph> {
-        let conn = self.lock();
+        let mut guard = self.lock();
+        let tx = guard.transaction()?;
+        let conn = &tx;
 
         let mut entities: Vec<EntityRecord> = {
             let mut stmt = conn.prepare("SELECT value FROM entity ORDER BY rowid")?;
@@ -321,6 +394,12 @@ impl Backend for SqliteStore {
                 .map(|j| serde_json::from_str(j))
                 .collect::<Result<Vec<_>, _>>()?
         };
+        #[cfg(test)]
+        AFTER_ENTITIES.with(|hook| {
+            if let Some(hook) = hook.borrow_mut().take() {
+                hook();
+            }
+        });
         let mut predicates: Vec<PredicateRecord> = {
             let mut stmt = conn.prepare("SELECT value FROM predicate ORDER BY rowid")?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -386,7 +465,8 @@ impl Backend for SqliteStore {
                     .push(EvidenceRecord { doc_id, sentence });
             }
         }
-        drop(conn);
+        tx.commit()?;
+        drop(guard);
 
         entities.sort_by_key(|e| e.ordinal);
         predicates.sort_by_key(|p| p.ordinal);
@@ -394,7 +474,10 @@ impl Backend for SqliteStore {
 
         let mut graph = KnowledgeGraph::new();
         for entity in &entities {
-            graph.intern_entity(&entity.display);
+            let id = graph.intern_entity(&entity.display);
+            if let Some(kind) = &entity.kind {
+                graph.set_kind(id, kind);
+            }
         }
         for predicate in &predicates {
             graph.intern_predicate(&predicate.key);
@@ -433,25 +516,137 @@ impl Backend for SqliteStore {
         Ok(graph)
     }
 
+    async fn learn_is_complete(
+        &self,
+        doc_id: &str,
+        model_id: &str,
+        chunks: &[ChunkRecord],
+        graph: &KnowledgeGraph,
+    ) -> anyhow::Result<bool> {
+        let mut guard = self.lock();
+        let tx = guard.transaction()?;
+        if !record_exists(&tx, "SELECT 1 FROM document WHERE id=?1", params![doc_id])? {
+            return Ok(false);
+        }
+        for expected in chunks {
+            let json: Option<String> = tx
+                .query_row(
+                    "SELECT value FROM chunk WHERE id=?1",
+                    params![expected.chunk_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let Some(json) = json else {
+                return Ok(false);
+            };
+            let actual: ChunkRecord = serde_json::from_str(&json)?;
+            if actual.text != expected.text
+                || actual.doc_id != expected.doc_id
+                || actual.ordinal != expected.ordinal
+            {
+                return Ok(false);
+            }
+            if !record_exists(
+                &tx,
+                "SELECT 1 FROM embedding WHERE id=?1 AND model_id=?2 AND chunk_id=?3",
+                params![
+                    format!("{model_id}:{}", expected.chunk_id),
+                    model_id,
+                    expected.chunk_id
+                ],
+            )? {
+                return Ok(false);
+            }
+        }
+        for (id, _) in graph.entities() {
+            if !record_exists(
+                &tx,
+                "SELECT 1 FROM entity WHERE id=?1",
+                params![graph.entity_key(id).unwrap()],
+            )? {
+                return Ok(false);
+            }
+        }
+        for (_, key) in graph.predicates() {
+            if !record_exists(&tx, "SELECT 1 FROM predicate WHERE id=?1", params![key])? {
+                return Ok(false);
+            }
+        }
+        for (_, rel) in graph.relationships() {
+            let id = crate::records::relationship_id(
+                &graph.entity_key(rel.src).unwrap(),
+                graph.predicate(rel.predicate).unwrap(),
+                &graph.entity_key(rel.dst).unwrap(),
+            );
+            let origin: Option<String> = tx
+                .query_row(
+                    "SELECT origin FROM relationship WHERE id=?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if origin.is_none()
+                || (rel.origin == atlas_graph::EdgeOrigin::Explicit
+                    && origin.as_deref() != Some("explicit"))
+            {
+                return Ok(false);
+            }
+            for ev in &rel.evidence {
+                if !record_exists(
+                    &tx,
+                    "SELECT 1 FROM evidence WHERE relationship_id=?1 AND doc_id=?2 AND sentence=?3",
+                    params![id, ev.doc_id, ev.sentence],
+                )? {
+                    return Ok(false);
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Grouped write: document, chunks, embeddings, and the whole graph in
     /// ONE transaction — one WAL sync instead of one per record. Any error
     /// rolls the entire group back (the `Transaction` drops unresolved),
     /// so a failed `learn` cannot leave a partial subset of its writes.
-    /// Record order inside the transaction matches the sequential default.
+    /// The write order is document, chunks, embeddings, then graph records.
     async fn apply_learn_write(
         &self,
         write: &crate::backend::LearnWrite<'_>,
     ) -> anyhow::Result<()> {
         let mut conn = self.lock();
         let tx = conn.transaction()?;
+        // Acquire the writer lock before reading evidence for the merge.
         upsert_json_on(&tx, "document", &write.document.doc_id, write.document)?;
         for chunk in write.chunks {
+            let previous: Option<String> = tx
+                .query_row(
+                    "SELECT value FROM chunk WHERE id=?1",
+                    params![chunk.chunk_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(previous) = previous {
+                let previous: ChunkRecord = serde_json::from_str(&previous)?;
+                anyhow::ensure!(
+                    previous.text == chunk.text
+                        && previous.doc_id == chunk.doc_id
+                        && previous.ordinal == chunk.ordinal,
+                    "chunk {} already has different text or layout; keep the original tokenizer and chunk settings, or rebuild into a new data directory to change the layout",
+                    chunk.chunk_id
+                );
+            }
             upsert_json_on(&tx, "chunk", &chunk.chunk_id, chunk)?;
         }
         for embedding in write.embeddings {
             write_embedding_on(&tx, embedding)?;
         }
-        for (ordinal, (_, entity)) in write.graph.entities().enumerate() {
+        for (_, entity) in write.graph.entities() {
+            let key = atlas_graph::normalize(&entity.display);
+            if record_exists(&tx, "SELECT 1 FROM entity WHERE id=?1", params![key])? {
+                continue;
+            }
+            let ordinal: u32 = next_json_ordinal(&tx, "entity")?;
             upsert_json_on(
                 &tx,
                 "entity",
@@ -460,23 +655,27 @@ impl Backend for SqliteStore {
                     key: atlas_graph::normalize(&entity.display),
                     display: entity.display.clone(),
                     kind: entity.kind.clone(),
-                    ordinal: ordinal as u32,
+                    ordinal,
                 },
             )?;
         }
-        for (ordinal, (_, key)) in write.graph.predicates().enumerate() {
+        for (_, key) in write.graph.predicates() {
+            if record_exists(&tx, "SELECT 1 FROM predicate WHERE id=?1", params![key])? {
+                continue;
+            }
+            let ordinal: u32 = next_json_ordinal(&tx, "predicate")?;
             upsert_json_on(
                 &tx,
                 "predicate",
                 key,
                 &PredicateRecord {
                     key: key.to_string(),
-                    ordinal: ordinal as u32,
+                    ordinal,
                 },
             )?;
         }
         for (ordinal, (_, rel)) in write.graph.relationships().enumerate() {
-            write_relationship_on(
+            merge_learn_relationship_on(
                 &tx,
                 &RelationshipRecord {
                     src: write.graph.entity_key(rel.src).ok_or_else(|| {
@@ -503,7 +702,188 @@ impl Backend for SqliteStore {
                 },
             )?;
         }
+        #[cfg(test)]
+        BEFORE_COMMIT.with(|hook| {
+            if let Some(hook) = hook.borrow().as_ref() {
+                hook();
+            }
+        });
         tx.commit()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static AFTER_ENTITIES: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = Default::default();
+    static BEFORE_COMMIT: std::cell::RefCell<Option<Box<dyn Fn()>>> = Default::default();
+}
+
+#[cfg(test)]
+mod crash_tests {
+    use super::*;
+    use crate::backend::LearnWrite;
+    use crate::records::DocumentRecord;
+
+    async fn apply_source(store: &SqliteStore, id: &str, extend: bool) {
+        let mut graph = KnowledgeGraph::new();
+        let rust = graph.intern_entity("Rust");
+        let tokio = graph.intern_entity("Tokio");
+        let uses = graph.intern_predicate("uses");
+        let sentence = format!("{id} source");
+        let evidence = Evidence {
+            doc_id: format!("{id}:0"),
+            sentence: sentence.clone(),
+        };
+        graph.link(
+            rust,
+            uses,
+            tokio,
+            atlas_graph::EdgeOrigin::Explicit,
+            evidence.clone(),
+        );
+        if extend {
+            let cargo = graph.intern_entity("Cargo");
+            let requires = graph.intern_predicate("requires");
+            graph.link(
+                tokio,
+                requires,
+                cargo,
+                atlas_graph::EdgeOrigin::Explicit,
+                evidence,
+            );
+        }
+        store
+            .apply_learn_write(&LearnWrite {
+                document: &DocumentRecord {
+                    doc_id: id.into(),
+                    text: sentence.clone(),
+                },
+                chunks: &[ChunkRecord {
+                    chunk_id: format!("{id}:0"),
+                    doc_id: id.into(),
+                    ordinal: 0,
+                    text: sentence,
+                }],
+                embeddings: &[EmbeddingRecord {
+                    chunk_id: format!("{id}:0"),
+                    model_id: "crash".into(),
+                    vector: vec![1.0],
+                }],
+                graph: &graph,
+            })
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn child() {
+        let Some(db) = std::env::var_os("ATLAS_UNIT_CRASH_DB") else {
+            return;
+        };
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let store = SqliteStore::open_durable(db).await.unwrap();
+            BEFORE_COMMIT.with(|hook| {
+                *hook.borrow_mut() = Some(Box::new(|| {
+                    std::fs::write(
+                        std::env::var_os("ATLAS_UNIT_CRASH_MARKER").unwrap(),
+                        b"open",
+                    )
+                    .unwrap();
+                    loop {
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }))
+            });
+            apply_source(&store, "new", true).await;
+        });
+    }
+
+    #[test]
+    fn kill_during_group_rolls_back_and_keeps_old_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("atlas.db");
+        let marker = dir.path().join("ready");
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let store = SqliteStore::open_durable(&db).await.unwrap();
+            apply_source(&store, "old", false).await;
+        });
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "sqlite_store::crash_tests::child"])
+            .env("ATLAS_UNIT_CRASH_DB", &db)
+            .env("ATLAS_UNIT_CRASH_MARKER", &marker)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !marker.exists() && std::time::Instant::now() < deadline {
+            if child.try_wait().unwrap().is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let ready = marker.exists();
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(ready, "child did not reach transaction pause");
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let store = SqliteStore::open_durable(&db).await.unwrap();
+            assert!(!store.document_exists("new").await.unwrap());
+            let graph = store.load_graph().await.unwrap();
+            assert_eq!(graph.relationship_count(), 1);
+            assert_eq!(
+                graph.relationships().next().unwrap().1.evidence[0].sentence,
+                "old source"
+            );
+            let conn = store.lock();
+            for (table, expected) in [
+                ("document", 1),
+                ("chunk", 1),
+                ("embedding", 1),
+                ("entity", 2),
+                ("predicate", 1),
+                ("relationship", 1),
+                ("evidence", 1),
+            ] {
+                let count: u32 = conn
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                    .unwrap();
+                assert_eq!(count, expected, "rolled back {table}");
+            }
+            let integrity: String = conn
+                .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(integrity, "ok");
+        });
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    #[tokio::test]
+    async fn graph_load_uses_one_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("atlas.db");
+        let store = SqliteStore::open_durable(&path).await.unwrap();
+        store
+            .upsert_entity(&EntityRecord {
+                key: "a".into(),
+                display: "A".into(),
+                kind: None,
+                ordinal: 0,
+            })
+            .await
+            .unwrap();
+        AFTER_ENTITIES.with(|hook| *hook.borrow_mut()=Some(Box::new(move|| {
+   std::thread::spawn(move|| {
+    let conn=Connection::open(path).unwrap();
+    conn.execute_batch(r#"BEGIN; INSERT INTO entity VALUES ('b','{"key":"b","display":"B","kind":null,"ordinal":1}');
+    INSERT INTO predicate VALUES ('uses','{"key":"uses","ordinal":0}');
+    INSERT INTO relationship VALUES ('r','a','uses','b','explicit',0);
+    INSERT INTO evidence VALUES ('r',0,'doc:0','A uses B'); COMMIT;"#).unwrap();
+   }).join().unwrap();
+  })));
+        assert_eq!(store.load_graph().await.unwrap().relationship_count(), 0);
+        assert_eq!(store.load_graph().await.unwrap().relationship_count(), 1);
     }
 }

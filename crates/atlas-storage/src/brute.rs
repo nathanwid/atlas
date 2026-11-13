@@ -14,17 +14,25 @@
 /// L2-normalize in place. A zero vector is left as-is rather than turned
 /// into NaNs; scores against it will be 0.
 fn normalize(v: &mut [f32]) {
-    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > f32::EPSILON {
+    // f64 safely holds squares of every finite f32, including subnormals.
+    let norm = v
+        .iter()
+        .map(|&x| f64::from(x) * f64::from(x))
+        .sum::<f64>()
+        .sqrt();
+    if norm > 0.0 {
         for x in v {
-            *x /= norm;
+            *x = (f64::from(*x) / norm) as f32;
         }
     }
 }
 
 /// Dot product of equal-length slices.
 fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b).map(|(x, y)| x * y).sum()
+    a.iter()
+        .zip(b)
+        .map(|(&x, &y)| f64::from(x) * f64::from(y))
+        .sum::<f64>() as f32
 }
 
 #[derive(Debug)]
@@ -38,6 +46,7 @@ impl BruteForceIndex {
     /// Build from a batch of vectors. All must have length `dim` and be
     /// finite; each is normalized. Ids are assigned in input order.
     pub fn build(dim: usize, vectors: &[Vec<f32>]) -> anyhow::Result<Self> {
+        anyhow::ensure!(dim > 0, "index dimension must be positive");
         let mut index = Self::with_capacity(dim, vectors.len());
         for vector in vectors {
             index.add(vector)?;
@@ -46,6 +55,7 @@ impl BruteForceIndex {
     }
 
     pub fn with_capacity(dim: usize, capacity: usize) -> Self {
+        assert!(dim > 0, "index dimension must be positive");
         BruteForceIndex {
             dim,
             vectors: Vec::with_capacity(capacity * dim),
@@ -146,6 +156,48 @@ mod tests {
             (hits[1].score - 0.6).abs() < 1e-6,
             "id 2 is [0.6,0.8], cosine 0.6"
         );
+    }
+
+    #[test]
+    fn identical_large_finite_vectors_score_one() {
+        let vector = vec![f32::MAX, f32::MAX];
+        let index = BruteForceIndex::build(2, std::slice::from_ref(&vector)).unwrap();
+
+        assert!((index.scores(&vector)[0] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn identical_tiny_finite_vectors_score_one() {
+        let smallest = f32::from_bits(1);
+        let vector = vec![smallest, 0.0];
+        let index = BruteForceIndex::build(2, std::slice::from_ref(&vector)).unwrap();
+
+        assert!((index.scores(&vector)[0] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn orthogonal_extreme_magnitude_vectors_score_zero() {
+        let vectors = [vec![f32::MAX, 0.0], vec![0.0, -f32::MAX]];
+        let index = BruteForceIndex::build(2, &vectors).unwrap();
+
+        let scores = index.scores(&[f32::MAX, 0.0]);
+
+        assert!((scores[0] - 1.0).abs() < 1e-6);
+        assert!(scores[1].abs() < 1e-6);
+    }
+
+    #[test]
+    fn normal_vector_ranking_is_unchanged() {
+        let index =
+            BruteForceIndex::build(2, &[vec![1.0, 0.0], vec![0.0, 1.0], vec![0.6, 0.8]]).unwrap();
+
+        let hits = index.search(&[1.0, 0.0], 3);
+
+        assert_eq!(
+            hits.iter().map(|hit| hit.id).collect::<Vec<_>>(),
+            vec![0, 2, 1]
+        );
+        assert!((hits[1].score - 0.6).abs() < 1e-6);
     }
 
     #[test]

@@ -1,8 +1,6 @@
 //! Command handlers.
 //!
-//! M01 wired the five vision commands; M07 makes `learn` and `search` real.
-//! Each handler logs its arguments via `tracing`. The remaining commands
-//! still report which milestone will deliver them.
+//! Learn, similar, graph, search, and ask commands.
 
 pub mod ask;
 pub mod graph;
@@ -17,8 +15,12 @@ use atlas_core::Config;
 pub async fn run(config: &Config, command: Command) -> anyhow::Result<()> {
     match command {
         Command::Learn { text } => learn::run(config, &text).await,
-        Command::Similar { term } => similar::run(&term).await,
-        Command::Graph { entity } => graph::run(&entity).await,
+        Command::Similar { term, top } => similar::run(config, &term, top).await,
+        Command::Graph {
+            entity,
+            hops,
+            limit,
+        } => graph::run(config, &entity, hops, limit).await,
         Command::Search { query, top, mode } => search::run(config, &query, top, mode).await,
         Command::Ask { question } => ask::run(config, &question).await,
     }
@@ -28,41 +30,49 @@ pub async fn run(config: &Config, command: Command) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    /// Placeholder commands still dispatch successfully.
-    #[test]
-    fn placeholder_commands_dispatch_successfully() {
-        let config = test_config();
-        let commands = [
+    #[tokio::test]
+    async fn similar_empty_database_reports_no_entities_without_model_download() {
+        let (_dir, config) = test_config();
+        run(
+            &config,
             Command::Similar {
                 term: "rust".into(),
+                top: 5,
             },
-            Command::Graph {
-                entity: "rust".into(),
-            },
-            Command::Ask {
-                question: "What does Rust use?".into(),
-            },
-        ];
-        for command in commands {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                assert!(run(&config, command).await.is_ok());
-            });
-        }
+        )
+        .await
+        .unwrap();
     }
 
-    pub(crate) fn test_config() -> Config {
-        Config {
+    #[tokio::test]
+    async fn graph_command_dispatches_with_default_limits() {
+        let (_dir, config) = test_config();
+        run(
+            &config,
+            Command::Graph {
+                entity: "Rust".into(),
+                hops: 1,
+                limit: 50,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    pub(crate) fn test_config() -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
             log_level: "info".into(),
-            data_dir: std::env::temp_dir().join("atlas-cli-test"),
-        }
+            data_dir: dir.path().to_path_buf(),
+        };
+        (dir, config)
     }
 
     /// Phase 3 regression: empty learn input is a usage error rejected
     /// before any store or model access (hence offline-safe).
     #[tokio::test]
     async fn empty_learn_text_is_a_usage_error() {
-        let config = test_config();
+        let (_dir, config) = test_config();
         let err = learn::run(&config, "")
             .await
             .expect_err("empty text must be rejected");
@@ -71,7 +81,7 @@ mod tests {
 
     #[tokio::test]
     async fn whitespace_learn_text_is_a_usage_error() {
-        let config = test_config();
+        let (_dir, config) = test_config();
         let err = learn::run(&config, "   \t\n")
             .await
             .expect_err("whitespace text must be rejected");

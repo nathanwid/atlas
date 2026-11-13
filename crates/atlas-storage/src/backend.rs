@@ -21,9 +21,8 @@ use atlas_graph::KnowledgeGraph;
 use std::future::Future;
 
 /// Everything one `learn` call persists, grouped so a backend may write it
-/// atomically. Record order inside the group matches the historical write
-/// order: document, then (chunk, embedding) per chunk, then the graph's
-/// entities, predicates, and relationships with their evidence.
+/// atomically. The SQLite write order is document, chunks, embeddings, then
+/// graph entities, predicates, relationships, and their evidence.
 pub struct LearnWrite<'a> {
     pub document: &'a DocumentRecord,
     pub chunks: &'a [ChunkRecord],
@@ -69,31 +68,29 @@ pub trait Backend: Send + Sync {
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
     fn load_graph(&self) -> impl Future<Output = anyhow::Result<KnowledgeGraph>> + Send;
 
-    /// Persist everything one `learn` call produced.
+    /// Check the expected fixed-layout records for this document and model.
+    /// Backends without a keyed check conservatively replay the idempotent group.
+    fn learn_is_complete(
+        &self,
+        _doc_id: &str,
+        _model_id: &str,
+        _chunks: &[ChunkRecord],
+        _graph: &KnowledgeGraph,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send {
+        async { Ok(false) }
+    }
+
+    /// Persist everything one `learn` call produced. The graph is a
+    /// document-local delta: merge its evidence without removing earlier
+    /// sources, preserve relationship order, and never downgrade origin.
     ///
-    /// The default writes each record through the primitives in the
-    /// historical order — one autocommit per record. [`SqliteStore`]
-    /// overrides this to commit the whole group in a single transaction;
-    /// the durability contract (all-or-nothing per group, or idempotently
-    /// repairable partial state) holds either way because every record is
-    /// an idempotent upsert keyed by a deterministic identity.
+    /// Implementations must serialize evidence merges with other writers.
+    /// The replacement primitives cannot provide a safe default merge.
+    /// [`SqliteStore`] commits the whole group in one transaction.
     fn apply_learn_write(
         &self,
         write: &LearnWrite<'_>,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send {
-        async move {
-            self.upsert_document(&write.document.doc_id, &write.document.text)
-                .await?;
-            for chunk in write.chunks {
-                self.upsert_chunk(chunk).await?;
-            }
-            for embedding in write.embeddings {
-                self.upsert_embedding(embedding).await?;
-            }
-            self.persist_graph(write.graph).await?;
-            Ok(())
-        }
-    }
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     /// Persist a whole graph: entities, predicates, relationships — all as
     /// idempotent upserts keyed by normalized identity. Identical loop for

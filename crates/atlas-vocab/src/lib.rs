@@ -26,3 +26,5 @@ pub mod vocab;
 
 pub use builder::build;
 pub use vocab::{TokenId, Vocab, VocabError};
+
+pub mod persistence;

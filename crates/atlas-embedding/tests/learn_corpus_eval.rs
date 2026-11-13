@@ -109,12 +109,9 @@ fn trains_on_corpus_and_supports_incremental_learning() {
         .unwrap()
         .remove(0);
     assert_eq!(v.len(), config.dim);
-    assert_eq!(
-        embedder.model_id(),
-        format!(
-            "atlas-skipgram-d{}-v{}",
-            config.dim,
-            embedder.model().vocab_len()
-        )
-    );
+    assert!(embedder.model_id().starts_with(&format!(
+        "atlas-skipgram-d{}-v{}-",
+        config.dim,
+        embedder.model().vocab_len()
+    )));
 }

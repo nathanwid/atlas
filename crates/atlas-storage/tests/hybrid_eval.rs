@@ -115,127 +115,49 @@ fn recall_vector(
     hits as f64 / gold.len() as f64
 }
 
-/// Query 1 targets the Python cluster; doc 0 (the Rust/Tokio doc) has zero
-/// lexical overlap with the query. Under SQLite's insertion-order rowids
-/// the zero-score tie band puts doc 0 itself into the vector top-3, and
-/// the graph tier then displaces it in favor of the cargo doc (evidence
-/// for cargo -extends-> rust, zero query overlap). This pins the honest
-/// RRF trade-off in its SQLite form: hybrid loses a gold chunk that
-/// vector-only had, while adding a graph-only hit.
+/// On these queries all vector seeds also have graph evidence. Each seed
+/// receives two RRF contributions, so expansion-only hits do not displace
+/// them. Fusion can still change their relative order.
 #[tokio::test]
-async fn hybrid_displaces_a_gold_chunk_for_a_graph_only_hit() {
+async fn shared_support_preserves_fixture_gold() {
     let (store, docs) = learned_store().await;
-    let embedder = WordOverlapEmbedder;
-    let config = HybridConfig::default();
-
-    let query = "python bindings scripting";
-    let gold = [3usize, 0usize]; // doc 3 (vector), doc 0 (zero-score tie band)
-
-    let vector = search(&store, &embedder, query, 3).await.unwrap();
-    let hybrid = hybrid_search(&store, &embedder, query, 3, &config, SearchMode::Hybrid)
+    for (query, gold) in [
+        ("python bindings scripting", [3usize, 0usize]),
+        ("tokio async runtimes", [0usize, 1usize]),
+    ] {
+        let vector = search(&store, &WordOverlapEmbedder, query, 3)
+            .await
+            .unwrap();
+        let hybrid = hybrid_search(
+            &store,
+            &WordOverlapEmbedder,
+            query,
+            3,
+            &HybridConfig::default(),
+            SearchMode::Hybrid,
+        )
         .await
         .unwrap();
-
-    let r_vec = recall_vector(&vector, &gold, &docs, 3);
-    let r_hyb = recall_at_k(&hybrid, &gold, &docs, 3);
-
-    // Mechanics: no duplicates; non-graph results are a rank-preserving
-    // subset of vector-only search.
-    let ids: HashSet<&str> = hybrid.iter().map(|r| r.chunk_id.as_str()).collect();
-    assert_eq!(ids.len(), hybrid.len(), "duplicate results");
-    let vector_ids: Vec<String> = vector.iter().map(|r| r.chunk_id.clone()).collect();
-    let mut last = 0usize;
-    for r in hybrid
-        .iter()
-        .filter(|r| r.source != atlas_storage::ResultSource::Graph)
-    {
-        let pos = vector_ids[last..]
-            .iter()
-            .position(|id| id == &r.chunk_id)
-            .expect("non-graph result must exist in vector-only search");
-        assert!(pos + last >= last);
-        last += pos + 1;
+        let vector_ids: HashSet<&str> = vector.iter().map(|r| r.chunk_id.as_str()).collect();
+        let hybrid_ids: HashSet<&str> = hybrid.iter().map(|r| r.chunk_id.as_str()).collect();
+        assert_eq!(hybrid_ids.len(), hybrid.len(), "duplicate results");
+        assert_eq!(hybrid_ids, vector_ids);
+        for hit in &hybrid {
+            assert_eq!(hit.source, atlas_storage::ResultSource::Both);
+            let seed = vector
+                .iter()
+                .find(|seed| seed.chunk_id == hit.chunk_id)
+                .unwrap();
+            assert_eq!(hit.score, Some(seed.score));
+            assert!(hit.via.iter().any(|via| via.starts_with("vector rank ")));
+            assert!(hit.via.iter().any(|via| via.starts_with("graph rank ")));
+        }
+        let r_vec = recall_vector(&vector, &gold, &docs, 3);
+        let r_hyb = recall_at_k(&hybrid, &gold, &docs, 3);
+        println!("{query:?}: vector recall@3={r_vec}, hybrid recall@3={r_hyb}");
+        assert_eq!(r_vec, 1.0);
+        assert_eq!(r_hyb, 1.0);
     }
-
-    // Zero-overlap chunks all score exactly 0.0; with insertion-order
-    // rowids the first fixture doc fills the last top-3 slot.
-    let doc0 = format!("{}:0", atlas_storage::doc_id_for(&docs[0]));
-    assert_eq!(
-        vector[2].chunk_id, doc0,
-        "designed fixture: the zero-score tie band puts doc 0 in the vector top-3"
-    );
-
-    // The graph tier surfaces the cargo doc (zero query overlap) and
-    // displaces doc 0 from the fused top-3: hybrid is worse here, not
-    // better — the RRF trade-off, pinned deterministically.
-    let doc2 = format!("{}:0", atlas_storage::doc_id_for(&docs[2]));
-    assert_eq!(
-        hybrid[0].chunk_id, doc2,
-        "graph expansion must surface the cargo doc at rank 0"
-    );
-    assert_eq!(
-        hybrid[0].source,
-        atlas_storage::ResultSource::Graph,
-        "the surfaced cargo doc is a graph-only hit"
-    );
-    assert!(
-        !hybrid.iter().any(|r| r.chunk_id == doc0),
-        "doc 0 is displaced from the fused top-3"
-    );
-    assert!(
-        (r_hyb - 0.5).abs() < 1e-9 && r_vec > r_hyb,
-        "hybrid recall@3 = {r_hyb} must lose to vector recall@3 = {r_vec}"
-    );
-}
-
-/// Query 2 documents the complementary case: on this query the graph tier
-/// adds the pyo3 doc (zero query overlap) without displacing either gold
-/// chunk, so hybrid matches vector-only recall exactly while surfacing a
-/// chunk vector-only could not see.
-#[tokio::test]
-async fn hybrid_adds_graph_hits_without_losing_gold() {
-    let (store, docs) = learned_store().await;
-    let embedder = WordOverlapEmbedder;
-    let config = HybridConfig::default();
-
-    let query = "tokio async runtimes";
-    let gold = [0usize, 1usize];
-
-    let vector = search(&store, &embedder, query, 3).await.unwrap();
-    let hybrid = hybrid_search(&store, &embedder, query, 3, &config, SearchMode::Hybrid)
-        .await
-        .unwrap();
-
-    let r_vec = recall_vector(&vector, &gold, &docs, 3);
-    let r_hyb = recall_at_k(&hybrid, &gold, &docs, 3);
-
-    // Both gold chunks survive fusion.
-    assert!(
-        (r_hyb - 1.0).abs() < 1e-9,
-        "hybrid recall@3 = {r_hyb} must keep both gold chunks"
-    );
-    assert!((r_vec - 1.0).abs() < 1e-9);
-
-    // The graph tier still worked: the pyo3 doc (zero lexical overlap with
-    // the query) entered the results via rust -requires-> pyo3.
-    let doc4 = format!("{}:0", atlas_storage::doc_id_for(&docs[4]));
-    assert_eq!(
-        hybrid[0].chunk_id, doc4,
-        "graph expansion surfaces the pyo3 doc at rank 0"
-    );
-    assert_eq!(
-        hybrid[0].source,
-        atlas_storage::ResultSource::Graph,
-        "the surfaced pyo3 doc is a graph-only hit"
-    );
-    // The zero-score tie band (insertion-order rowids) fills the third
-    // vector slot with the cargo doc, which fusion then displaces — the
-    // mirror image of the displacement pinned by the q1 test above.
-    let doc2 = format!("{}:0", atlas_storage::doc_id_for(&docs[2]));
-    assert!(
-        !hybrid.iter().any(|r| r.chunk_id == doc2),
-        "the tie-band seed is displaced by the graph hit"
-    );
 }
 
 /// Graph mode returns only expansion chunks; vector mode matches M07
